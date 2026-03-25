@@ -2511,6 +2511,87 @@
         document.getElementById('panicOverlay').classList.remove('active');
         document.querySelectorAll('.choice-btn').forEach(b=>b.disabled=true);
 
+        // ============================================================
+        // 🔧 STEP B: DB-Arbitrated Battle Answer
+        // Battle mode ใช้ submit_battle_answer (เขียน server_timestamp ลง DB)
+        // เพื่อให้ DB เป็นคนตัดสิน "ใครกดก่อน" แทน broadcast race
+        // ============================================================
+        if(isBattleMode && currentBattleRoomId) {
+            const battleRpcPromise = sb.rpc('submit_battle_answer', {
+                p_emp_id:      st.u.employee_id,
+                p_room_id:     currentBattleRoomId,
+                p_q_idx:       battleIndex,
+                p_question_id: st.curQ.id,
+                p_selected:    parseInt(v),
+                p_time_taken:  timeTaken,
+                p_streak:      st.s
+            });
+            const timeoutPromise = new Promise(r => setTimeout(() => r({ error: { message: 'timeout' } }), 5000));
+            const { data, error } = await Promise.race([battleRpcPromise, timeoutPromise]);
+
+            if(error || !data) {
+                // fallback: ถ้า DB ตอบไม่ทัน ให้ advance ไปข้อถัดไปเลย (ไม่ค้างจอ)
+                isAnswering = false;
+                battleAdvanceQ(false);
+                return;
+            }
+
+            // data.winner_id  = emp_id ของคนที่ DB ถือว่ากดก่อน (ถูกต้องเท่านั้น)
+            // data.is_correct = คำตอบของเราถูกไหม
+            // data.points     = แต้มที่ได้ (0 ถ้าแพ้ race หรือผิด)
+            // data.already_answered = true ถ้ามีคนตอบไปแล้วก่อนหน้า (ซ้ำ)
+
+            const iWon    = data.winner_id === String(st.u.employee_id);
+            const isRight = data.is_correct;
+
+            if(isRight && iWon) {
+                // ✅ ตอบถูก + กดก่อน
+                btn.classList.add('correct');
+                playSound('correct');
+                st.s++;
+                const pp = document.getElementById('scoreEff');
+                pp.innerText = "+" + data.points;
+                pp.style.display = 'block';
+                pp.style.animation = 'none';
+                void pp.offsetWidth;
+                pp.style.animation = 'floatUpFade 1.2s forwards';
+                animateScore('ingameScore', st.myPts, st.myPts + data.points, 1000);
+                st.myPts    += data.points;
+                battlePointsEarned += data.points;
+                battleMyCorrect++;
+                updateBattleProgress(battleIndex, 'correct');
+                // แจ้งฝ่ายตรงข้ามว่าโดน snatch และอัปเดตคะแนน
+                if(battleChannel) {
+                    battleChannel.send({ type:'broadcast', event:'snatched',      payload:{ q_idx: battleIndex, emp_id: st.u.employee_id }});
+                    battleChannel.send({ type:'broadcast', event:'score_update',  payload:{ emp_id: st.u.employee_id, score: st.myPts, correct: battleMyCorrect }});
+                }
+                setTimeout(() => { pp.style.display='none'; battleAdvanceQ(true); }, 1200);
+
+            } else if(isRight && !iWon) {
+                // ✅ ตอบถูก แต่อีกฝ่ายกด DB ก่อน (แพ้ race)
+                btn.classList.add('correct');   // ไฮไลต์ว่าถูก แต่ไม่ได้แต้ม
+                playSound('wrong');
+                updateBattleProgress(battleIndex, 'snatched');
+                battleResults[battleIndex] = 'snatched';
+                const sn = document.getElementById('snatchOverlay');
+                if(sn) { sn.querySelector('.snatch-stamp').innerText = '⚡ อีกฝ่ายกดก่อน!'; sn.classList.add('active'); }
+                setTimeout(() => { if(sn) sn.classList.remove('active'); battleAdvanceQ(false); }, 1800);
+
+            } else {
+                // ❌ ตอบผิด
+                btn.classList.add('incorrect');
+                playSound('wrong');
+                updateBattleProgress(battleIndex, 'wrong');
+                // ถ้าตอบผิด ให้รอ snatched event จากอีกฝ่าย (ถ้าเขาตอบถูก)
+                // หรือรอ timer หมด — battleAdvanceQ จะถูกเรียกจาก timer หรือ snatched handler
+                isAnswering = false;
+            }
+            return; // จบ battle path
+        }
+
+        // ============================================================
+        // Normal (non-battle) mode — ใช้ submit_answer เดิม
+        // ============================================================
         const fetchPromise = sb.rpc('submit_answer', {
             p_emp_id: st.u.employee_id, p_question_id: st.curQ.id, p_selected_choice: parseInt(v), p_time_taken: timeTaken, p_streak: st.s
         });
@@ -2520,7 +2601,6 @@
 
         if (error || !data || !data.success) {
             isAnswering = false; 
-            if(isBattleMode) { battleAdvanceQ(false); return; }
             exitQuiz();
             if(error?.message === 'timeout') showAlert("การเชื่อมต่อขัดข้องหรือล่าช้าเกินไป", "เครือข่ายมีปัญหา", "fa-wifi", "var(--mc-red)");
             else if(data && data.message === 'cheat') showAlert("🚨 ระบบตรวจพบความผิดปกติ! (ตอบเร็วเกินไป)", "ผิดปกติ", "fa-exclamation-triangle", "var(--mc-red)");
@@ -2532,40 +2612,22 @@
             btn.classList.add('correct');
             playSound('correct');
             st.s++; 
-            
             const pp = document.getElementById('scoreEff'); 
             pp.innerText = "+" + data.points; 
             pp.style.display = 'block';
             pp.style.animation = 'none';
             void pp.offsetWidth; 
             pp.style.animation = 'floatUpFade 1.2s forwards';
-
             animateScore('ingameScore', st.myPts, st.myPts + data.points, 1000);
             st.myPts += data.points; 
-
-            if(isBattleMode) {
-                battlePointsEarned += data.points; 
-                battleMyCorrect++;
-                updateBattleProgress(battleIndex, 'correct');
-                if(battleChannel) {
-                    battleChannel.send({ type: 'broadcast', event: 'snatched', payload: { q_idx: battleIndex, emp_id: st.u.employee_id }});
-                    battleChannel.send({ type: 'broadcast', event: 'score_update', payload: { emp_id: st.u.employee_id, score: st.myPts, correct: battleMyCorrect }});
-                }
-                setTimeout(()=>{ pp.style.display='none'; battleAdvanceQ(true); }, 1200);
-            } else {
-                if(currentBattleRoomId && battleChannel) {
-                    battleChannel.send({ type: 'broadcast', event: 'score_update', payload: { emp_id: st.u.employee_id, score: st.myPts }});
-                }
-                setTimeout(()=>{ pp.style.display='none'; loadQ(st.q.filter(q=>q.is_active!==false)); }, 1200);
+            if(currentBattleRoomId && battleChannel) {
+                battleChannel.send({ type: 'broadcast', event: 'score_update', payload: { emp_id: st.u.employee_id, score: st.myPts }});
             }
+            setTimeout(()=>{ pp.style.display='none'; loadQ(st.q.filter(q=>q.is_active!==false)); }, 1200);
         } else {
             btn.classList.add('incorrect');
             playSound('wrong');
-            if(isBattleMode) {
-                updateBattleProgress(battleIndex, 'wrong');
-            } else {
-                setTimeout(()=>{ isAnswering = false; endQ(true); }, 1000); 
-            }
+            setTimeout(()=>{ isAnswering = false; endQ(true); }, 1000); 
         }
     }
 
@@ -3315,12 +3377,18 @@
                 })
                 .on('broadcast', { event: 'snatched' }, payload => {
                     if(payload.payload.emp_id !== st.u.employee_id) {
-                        playSound('snatch'); clearInterval(quizInterval); isAnswering = true;
-                        document.querySelectorAll('.choice-btn').forEach(b => b.disabled = true);
-                        updateBattleProgress(payload.payload.q_idx, 'snatched');
-                        battleResults[payload.payload.q_idx] = 'snatched';
-                        const sn = document.getElementById('snatchOverlay'); sn.classList.add('active');
-                        setTimeout(() => { sn.classList.remove('active'); isAnswering = false; battleAdvanceQ(false); }, 1800);
+                        // 🔧 STEP B: รับ snatched จากอีกฝ่าย
+                        // ถ้าเรา isAnswering=true แสดงว่าเราตอบแล้ว (DB กำลัง resolve) — ไม่ต้องทำอะไร
+                        // ถ้าเรายัง isAnswering=false แสดงว่าเรายังไม่ได้กด — ล็อกและไปข้อถัดไป
+                        if(!isAnswering) {
+                            playSound('snatch'); clearInterval(quizInterval); isAnswering = true;
+                            document.querySelectorAll('.choice-btn').forEach(b => b.disabled = true);
+                            updateBattleProgress(payload.payload.q_idx, 'snatched');
+                            battleResults[payload.payload.q_idx] = 'snatched';
+                            const sn = document.getElementById('snatchOverlay'); 
+                            if(sn) { sn.querySelector('.snatch-stamp').innerText = 'คู่แข่งตอบก่อน!'; sn.classList.add('active'); }
+                            setTimeout(() => { if(sn) sn.classList.remove('active'); isAnswering = false; battleAdvanceQ(false); }, 1800);
+                        }
                     }
                 })
                 .on('broadcast', { event: 'player_ready' }, payload => {
