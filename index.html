@@ -370,6 +370,8 @@
         cursor: pointer;
         transition: all 0.1s ease;
         font-family: 'Outfit', sans-serif;
+        /* ป้องกันการ Zoom เวลาเคาะจอ 2 ครั้งบนมือถือ */
+        touch-action: manipulation;
     }
     
     .num-btn:active {
@@ -934,6 +936,8 @@
         /* 🔥 2 บรรทัดที่หายไป เอากลับมาใส่เพื่อล็อคแอนิเมชันไม่ให้ล้นไปทับปุ่มอื่น */
         position: relative; 
         overflow: hidden; 
+        /* ป้องกันการ Zoom เวลาเคาะจอ 2 ครั้งบนมือถือ */
+        touch-action: manipulation;
     }
     
     .choice-btn::before {
@@ -2121,8 +2125,10 @@
             </div>
         </div>
         <div class="result-rewards" id="resultRewards">
-            <div class="rw-row"><span class="rw-label">Personal Point</span><span class="rw-val" id="resultPP" style="color:var(--gold);">+0</span></div>
-            <div class="rw-row"><span class="rw-label">Site Point</span><span class="rw-val" id="resultSP" style="color:var(--agri-green);">+0</span></div>
+            <div class="rw-row" style="justify-content: center; gap: 10px;">
+                <span class="rw-label" style="font-size: 16px;">คะแนนที่ได้รับจากการดวล:</span>
+                <span class="rw-val" id="resultEarnedPts" style="color:var(--gold); font-size: 20px;">+0</span>
+            </div>
         </div>
         <div class="result-buttons">
             <button class="btn-modern" style="background:transparent; border:2px solid var(--text-dim); box-shadow:none; color:var(--text-secondary);" onclick="exitBattleResult()"><i class="fas fa-home"></i> กลับหน้าหลัก</button>
@@ -2552,6 +2558,7 @@
             st.myPts += data.points; 
 
             if(isBattleMode) {
+                battlePointsEarned += data.points; // คำนวณ Point เพื่อแสดงในตอนจบ
                 battleMyCorrect++;
                 updateBattleProgress(battleIndex, 'correct');
                 if(battleChannel) {
@@ -2570,7 +2577,7 @@
             playSound('wrong');
             if(isBattleMode) {
                 updateBattleProgress(battleIndex, 'wrong');
-                setTimeout(()=>{ isAnswering = false; battleAdvanceQ(false); }, 1000);
+                // ลบการทำงานให้ข้ามข้ออัตโนมัติออก รออีกคนหรือรอให้เวลาหมดเท่านั้น
             } else {
                 setTimeout(()=>{ isAnswering = false; endQ(true); }, 1000); 
             }
@@ -2589,6 +2596,14 @@
     // ย้ายการอัปเดตกระดานคะแนน (fetchD) มาทำแค่ตอนออกจากเกมครั้งเดียว
     async function exitQuiz() { 
         if(isAnswering) return; 
+        
+        // ดักจับการกดออกกลางคันระหว่าง Battle 
+        if(isBattleMode && battleIndex < BATTLE_Q_COUNT) {
+            if(!confirm("คุณกำลังอยู่ในโหมด Battle หากกดตกลงจะเป็นการยอมแพ้และออกจากเกมทันที คุณแน่ใจหรือไม่?")) {
+                return;
+            }
+        }
+
         if(readyInterval) clearInterval(readyInterval); 
         if(forceStartTimeout) clearTimeout(forceStartTimeout);
         if(typeof battleHeartbeatInterval !== 'undefined' && battleHeartbeatInterval) clearInterval(battleHeartbeatInterval);
@@ -3179,6 +3194,7 @@
     let battleHeartbeatInterval = null, lastOppHeartbeat = 0, battleCooldownUntil = 0;
     let battleOppInfo = null, battleMyInfo = null;
     let rematchRequested = false, rematchOppRequested = false;
+    let battlePointsEarned = 0; // เพิ่มตัวแปรเก็บคะแนนรวมตอนจบ Battle
     const BATTLE_Q_COUNT = 9, BATTLE_TIME_PER_Q = 8;
 
     function clearBattleTimers() { if(queueTimer) clearInterval(queueTimer); if(triviaTimer) clearInterval(triviaTimer); }
@@ -3284,6 +3300,7 @@
     async function startBattleQuiz() {
         isBattleMode = true; st.s = 0; isAnswering = false;
         battleIndex = 0; battleMyCorrect = 0; battleOppCorrect = 0;
+        battlePointsEarned = 0;
         battleResults = []; battleQuestions = []; battleShuffleSeeds = [];
         rematchRequested = false; rematchOppRequested = false;
         st.myPts = st.l.filter(l => l.employee_id === st.u.employee_id).reduce((a,b)=>a+(b.point||0),0);
@@ -3372,7 +3389,7 @@
         if(battleIndex >= BATTLE_Q_COUNT || battleIndex >= battleQuestions.length) { finishBattle(); return; }
         if(readyInterval) clearInterval(readyInterval);
         if(forceStartTimeout) clearTimeout(forceStartTimeout);
-        isAnswering = false;
+        isAnswering = true; // ล็อคปุ่มไว้ก่อนจนกว่าจะนับถอยหลัง Ready เสร็จ
         const ws = document.getElementById('battleWaitScreen'); if(ws) ws.style.display='none';
         const sn = document.getElementById('snatchOverlay'); if(sn) sn.classList.remove('active');
         const tBar=document.getElementById('tBar'), panic=document.getElementById('panicOverlay'), countBox=document.getElementById('bigCountdown');
@@ -3384,23 +3401,40 @@
         document.getElementById('streak').innerText = st.s;
         const seed = battleShuffleSeeds[battleIndex] || (battleIndex+1)*12345;
         const choiceOrder = seededShuffle([1,2,3,4], seed);
-        document.getElementById('qArea').innerHTML =
-            `<div style="text-align:center; animation: slideUpFade 0.4s ease;">
+        
+        // 🔥 เพิ่มการดีเลย์ 2 วิเพื่อซิงค์ทั้งคู่ให้ทันกัน
+        document.getElementById('qArea').innerHTML = `
+            <div id="readyOverlay" style="position:absolute; inset:0; background:rgba(0,0,0,0.85); z-index:20000; display:flex; justify-content:center; align-items:center; font-size:60px; font-weight:900; color:var(--gold); border-radius:20px; text-shadow: 0 0 30px rgba(251,191,36,0.6);">Ready...</div>
+            <div style="text-align:center; animation: slideUpFade 0.4s ease;">
                 <div style="font-size:13px; color:var(--text-muted); margin-bottom:8px; letter-spacing:2px;">ข้อ ${battleIndex+1} / ${BATTLE_Q_COUNT}</div>
                 <div class="q-txt">${st.curQ.question}</div>
             </div>
             <div class="choice-grid" style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
                 ${choiceOrder.map((i, idx) => `<button class="choice-btn" style="animation: slideUpFade 0.4s ease ${idx*0.1}s backwards;" onclick="ans('${i}',this)">${st.curQ['option_'+i]}</button>`).join('')}
             </div>`;
-        let timeLeft = BATTLE_TIME_PER_Q;
-        quizInterval = setInterval(() => {
-            if(isAnswering) return;
-            timeLeft -= 0.1;
-            tBar.style.width = (timeLeft/BATTLE_TIME_PER_Q)*100+'%';
-            countBox.innerText = Math.max(0,timeLeft).toFixed(1);
-            if(timeLeft <= 3.0) { tBar.style.background='linear-gradient(90deg, var(--mc-red), var(--mc-red-light))'; panic.classList.add('active'); countBox.classList.add('urgent'); if(Math.floor(timeLeft*10)%10===0) playSound('tick'); }
-            if(timeLeft <= 0) { clearInterval(quizInterval); isAnswering=false; updateBattleProgress(battleIndex,'wrong'); battleAdvanceQ(false); }
-        }, 100);
+
+        let readySecs = 2;
+        let readyInt = setInterval(() => {
+            readySecs--;
+            if(readySecs === 1) document.getElementById('readyOverlay').innerText = "Go!";
+            if(readySecs <= 0) {
+                clearInterval(readyInt);
+                document.getElementById('readyOverlay').style.display = 'none';
+                isAnswering = false; // ปลดล็อคปุ่ม
+                st.qStartTime = Date.now(); // รีเซ็ตเวลาเริ่มต้นจริงๆ
+                
+                // เริ่มนับ 8 วิ
+                let timeLeft = BATTLE_TIME_PER_Q;
+                quizInterval = setInterval(() => {
+                    if(isAnswering) return;
+                    timeLeft -= 0.1;
+                    tBar.style.width = (timeLeft/BATTLE_TIME_PER_Q)*100+'%';
+                    countBox.innerText = Math.max(0,timeLeft).toFixed(1);
+                    if(timeLeft <= 3.0) { tBar.style.background='linear-gradient(90deg, var(--mc-red), var(--mc-red-light))'; panic.classList.add('active'); countBox.classList.add('urgent'); if(Math.floor(timeLeft*10)%10===0) playSound('tick'); }
+                    if(timeLeft <= 0) { clearInterval(quizInterval); isAnswering=false; updateBattleProgress(battleIndex,'wrong'); battleAdvanceQ(false); }
+                }, 100);
+            }
+        }, 1000);
     }
 
     // --- 7. ไปข้อถัดไป ---
@@ -3427,10 +3461,9 @@
         isTechWin = isTechWin || false; isDraw = isDraw || false;
         isBattleMode = false; clearInterval(quizInterval);
         const ws = document.getElementById('battleWaitScreen'); if(ws) ws.style.display='none';
-        let personalPt=0, sitePt=0;
-        if(isTechWin||isWin) { personalPt=Math.ceil((battleMyCorrect/BATTLE_Q_COUNT)*500/10)*10; sitePt=Math.ceil((battleMyCorrect/BATTLE_Q_COUNT)*100/10)*10; playSound('win'); }
-        else if(isDraw) { personalPt=300; sitePt=0; }
-        else { personalPt=300; sitePt=0; playSound('lose'); }
+        
+        if(isTechWin||isWin) { playSound('win'); }
+        else if(!isDraw) { playSound('lose'); }
 
         const crown=document.getElementById('resultCrown'), title=document.getElementById('resultTitle'), subtitle=document.getElementById('resultSubtitle');
         if(isTechWin) { crown.innerText='🏆'; title.innerText='ชนะ Technical Win!'; title.style.color='var(--agri-green)'; subtitle.innerText='คู่แข่งออกจากเกมไป คุณได้รับชัยชนะอัตโนมัติ'; }
@@ -3447,10 +3480,10 @@
         document.getElementById('resultOppScore').innerText = isTechWin?'-':battleOppCorrect;
         document.getElementById('resultMyCard').classList.toggle('winner', isWin||isTechWin);
         document.getElementById('resultOppCard').classList.toggle('winner', !isWin && !isTechWin && !isDraw);
-        document.getElementById('resultPP').innerText = '+'+personalPt;
-        document.getElementById('resultPP').style.color = personalPt>300?'var(--gold)':'var(--text-secondary)';
-        document.getElementById('resultSP').innerText = sitePt>0?('+'+sitePt):'0';
-        document.getElementById('resultSP').style.color = sitePt>0?'var(--agri-green)':'var(--text-muted)';
+        
+        // 🔥 โชว์คะแนนรวมที่ได้จากการตอบถูกในแมตช์นี้ (สะท้อนค่าที่เข้าไปใน DB จริงๆ)
+        document.getElementById('resultEarnedPts').innerText = '+'+battlePointsEarned;
+        
         const rb=document.getElementById('btnRematch'); rb.innerHTML='<i class="fas fa-redo"></i> แข่งอีกรอบ'; rb.style.animation=''; rb.disabled=false; rb.style.display=isTechWin?'none':'block';
         document.getElementById('battleScoreBoardUI').style.display='none';
         document.getElementById('battleProgressUI').style.display='none';
@@ -3537,7 +3570,8 @@
     // =========================================
     let hideTimeout = null;
     document.addEventListener("visibilitychange", () => {
-        if(document.hidden && currentBattleRoomId) {
+        const isQueueActive = document.getElementById('pgBattleQueue').classList.contains('active');
+        if(document.hidden && currentBattleRoomId && isQueueActive) {
             hideTimeout = setTimeout(()=>{ cancelBattleQueue(); showAlert('คุณถูกนำออกจากคิวเนื่องจากพับหน้าจอเกิน 15 วินาที','คิวหลุด!','fa-clock'); },15000);
         } else { if(hideTimeout){clearTimeout(hideTimeout);hideTimeout=null;} }
     });
