@@ -1897,7 +1897,7 @@
      
      <div class="tccc-badge">
         <img src="https://crm.buzzebees.com/wp-content/uploads/2024/12/TCCC-Logo.png" alt="TCCC"/>
-        <span>Thai Central Chemical PCL V.6</span>
+        <span>Thai Central Chemical PCL</span>
      </div>
     </div>
    </div>
@@ -3109,10 +3109,6 @@
     // ⚔️ REALTIME BATTLE MODE LOGIC (SYNC FIX)
     // =========================================
     
-    // ตัวแปรเพิ่มสำหรับเช็คสถานะการโหลด UI แบบ 2 ฝั่ง
-    let myUiLoaded = false;
-    let oppUiLoaded = false;
-
     let audioCtx = null; let soundEnabled = true;
     function initAudio() { if(!audioCtx) try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e){} }
     function playSound(type) {
@@ -3170,6 +3166,8 @@
     let myReady = false, oppReady = false, battleChannel = null;
     let readyInterval = null;
     var forceStartTimeout = null;
+    // 🔧 FIX A1: ui_loaded sync flags (declare ที่นี่ที่เดียว)
+    let myUiLoaded = false, oppUiLoaded = false;
     let battleQuestions = [], battleShuffleSeeds = [], battleIndex = 0;
     let battleMyCorrect = 0, battleOppCorrect = 0, battleResults = [];
     let battleHeartbeatInterval = null, lastOppHeartbeat = 0, battleCooldownUntil = 0;
@@ -3325,7 +3323,12 @@
                         setTimeout(() => { sn.classList.remove('active'); isAnswering = false; battleAdvanceQ(false); }, 1800);
                     }
                 })
-                .on('broadcast', { event: 'player_ready' }, payload => { oppReady = true; checkBothReady(); })
+                .on('broadcast', { event: 'player_ready' }, payload => {
+                    // 🔧 FIX A4: เช็ค q_idx ก่อน เพื่อป้องกัน ready ข้อเก่าปลุก checkBothReady ข้อใหม่
+                    if(payload.payload.q_idx === undefined || payload.payload.q_idx === battleIndex) {
+                        oppReady = true; checkBothReady();
+                    }
+                })
                 .on('broadcast', { event: 'heartbeat' }, payload => { if(payload.payload.emp_id !== st.u.employee_id) lastOppHeartbeat = Date.now(); })
                 .on('broadcast', { event: 'battle_end_scores' }, payload => { if(payload.payload.emp_id !== st.u.employee_id) battleOppCorrect = payload.payload.correct; })
                 .on('broadcast', { event: 'rematch_request' }, payload => {
@@ -3336,7 +3339,17 @@
                     }
                 })
                 .subscribe((status) => {
-                    if(status==='SUBSCRIBED' && myReady) battleChannel.send({type:'broadcast',event:'player_ready',payload:{}});
+                    if(status==='SUBSCRIBED') {
+                        if(myReady) battleChannel.send({type:'broadcast',event:'player_ready',payload:{q_idx:battleIndex}});
+                        // 🔧 FIX A5: Host ส่ง sync_q_set หลัง subscribe เสร็จจริงๆ ไม่ใช่ setTimeout ตาบอด
+                        if(isBattleHost && battleQuestions.length > 0) {
+                            battleChannel.send({type:'broadcast',event:'sync_q_set',payload:{q_ids:battleQuestions.map(q=>q.id),seeds:battleShuffleSeeds}});
+                        }
+                        // 🔧 FIX A6: P2 re-send ui_loaded หลัง subscribe สำเร็จ เผื่อ Host ส่งมาก่อนที่ P2 จะ subscribe เสร็จ
+                        if(!isBattleHost && myUiLoaded) {
+                            battleChannel.send({ type: 'broadcast', event: 'ui_loaded', payload: { emp_id: st.u.employee_id } });
+                        }
+                    }
                     if(status==='CLOSED'||status==='CHANNEL_ERROR') {
                         showConnToast(true);
                         setTimeout(()=>{ if(currentBattleRoomId && isBattleMode) try{battleChannel.subscribe();}catch(e){} },2000);
@@ -3364,7 +3377,7 @@
             const shuffled = shuffle([...vq]);
             battleQuestions = shuffled.slice(0, BATTLE_Q_COUNT);
             battleShuffleSeeds = battleQuestions.map(()=>Math.floor(Math.random()*2147483646)+1);
-            setTimeout(()=>{ if(battleChannel) battleChannel.send({type:'broadcast',event:'sync_q_set',payload:{q_ids:battleQuestions.map(q=>q.id),seeds:battleShuffleSeeds}}); },500);
+            // 🔧 FIX A5: sync_q_set ย้ายไปส่งใน subscribe callback แล้ว (เมื่อ SUBSCRIBED จริงๆ)
         }
         showBattleWait("กำลังเตรียมสมรภูมิ...");
     }
@@ -3537,8 +3550,9 @@
     function showConnToast(show) { document.getElementById('connToast').style.display=show?'block':'none'; if(show) setTimeout(()=>showConnToast(false),5000); }
 
     function checkBothReady() {
+        // 🔧 FIX A2: P2 ต้องเช็ค oppReady ด้วย ไม่ใช่แค่รอ questions มาครบ
         if(isBattleHost && myReady && oppReady) { myReady=false; oppReady=false; setTimeout(()=>battleLoadQ(),1500); }
-        if(!isBattleHost && myReady && battleQuestions.length >= BATTLE_Q_COUNT) { myReady=false; oppReady=false; setTimeout(()=>battleLoadQ(),1500); }
+        if(!isBattleHost && myReady && oppReady && battleQuestions.length >= BATTLE_Q_COUNT) { myReady=false; oppReady=false; setTimeout(()=>battleLoadQ(),1500); }
     }
 
     function showBattleWait(customText) {
@@ -3546,7 +3560,9 @@
         myReady = true;
         if(readyInterval) clearInterval(readyInterval);
         if(forceStartTimeout) clearTimeout(forceStartTimeout);
-        readyInterval = setInterval(()=>{ if(battleChannel) try{battleChannel.send({type:'broadcast',event:'player_ready',payload:{}});}catch(e){} },1000);
+        // 🔧 FIX A3: ส่ง q_idx ไปด้วยเพื่อป้องกัน ready ข้อเก่ามาปลุก checkBothReady ข้อใหม่
+        const currentQIdx = battleIndex;
+        readyInterval = setInterval(()=>{ if(battleChannel) try{battleChannel.send({type:'broadcast',event:'player_ready',payload:{q_idx:currentQIdx}});}catch(e){} },1000);
         checkBothReady();
         if(isBattleHost) { forceStartTimeout = setTimeout(()=>{ if(myReady){oppReady=true;checkBothReady();} },4000); }
         let ws = document.getElementById('battleWaitScreen');
