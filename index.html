@@ -1897,7 +1897,7 @@
      
      <div class="tccc-badge">
         <img src="https://crm.buzzebees.com/wp-content/uploads/2024/12/TCCC-Logo.png" alt="TCCC"/>
-        <span>Thai Central Chemical PCL V.Alpha</span>
+        <span>Thai Central Chemical PCL</span>
      </div>
     </div>
    </div>
@@ -2544,46 +2544,48 @@
             const iWon    = data.winner_id === String(st.u.employee_id);
             const isRight = data.is_correct;
 
-            if(isRight && iWon) {
-                // ✅ ตอบถูก + กดก่อน
+            // คำนวณคะแนน in-game ตามเวลาที่ตอบ (ไม่ใช่แต้ม leaderboard)
+            const qScore = (isRight) ? calcBattleScore(timeTaken, battlePlayerCount) : 0;
+
+            if(isRight) {
+                // ✅ ตอบถูก — ได้คะแนน in-game ตามเวลา
                 btn.classList.add('correct');
                 playSound('correct');
                 st.s++;
+                battleMyCorrect++;
+                battleMyGameScore += qScore;
+                battleMyTotalTime += timeTaken;
+                updateBattleProgress(battleIndex, 'correct');
+
+                // แสดง +score ชั่วคราว (ไม่บวก leaderboard จริง)
                 const pp = document.getElementById('scoreEff');
-                pp.innerText = "+" + data.points;
+                pp.innerText = "+" + qScore + " pt";
                 pp.style.display = 'block';
                 pp.style.animation = 'none';
                 void pp.offsetWidth;
                 pp.style.animation = 'floatUpFade 1.2s forwards';
-                animateScore('ingameScore', st.myPts, st.myPts + data.points, 1000);
-                st.myPts    += data.points;
-                battlePointsEarned += data.points;
-                battleMyCorrect++;
-                updateBattleProgress(battleIndex, 'correct');
-                // แจ้งฝ่ายตรงข้ามว่าโดน snatch และอัปเดตคะแนน
+
+                // อัปเดต in-game scoreboard
+                const myDisp = document.getElementById('myBattleScoreDisplay');
+                if(myDisp) myDisp.innerText = battleMyGameScore.toLocaleString('th-TH');
+
+                // แจ้งฝ่ายตรงข้ามพร้อมส่งคะแนน in-game + เวลารวม
                 if(battleChannel) {
-                    battleChannel.send({ type:'broadcast', event:'snatched',      payload:{ q_idx: battleIndex, emp_id: st.u.employee_id }});
-                    battleChannel.send({ type:'broadcast', event:'score_update',  payload:{ emp_id: st.u.employee_id, score: st.myPts, correct: battleMyCorrect }});
+                    battleChannel.send({ type:'broadcast', event:'score_update', payload:{
+                        emp_id: st.u.employee_id,
+                        gameScore: battleMyGameScore,
+                        correct: battleMyCorrect,
+                        totalTime: battleMyTotalTime
+                    }});
                 }
                 setTimeout(() => { pp.style.display='none'; battleAdvanceQ(true); }, 1200);
 
-            } else if(isRight && !iWon) {
-                // ✅ ตอบถูก แต่อีกฝ่ายกด DB ก่อน (แพ้ race)
-                btn.classList.add('correct');   // ไฮไลต์ว่าถูก แต่ไม่ได้แต้ม
-                playSound('wrong');
-                updateBattleProgress(battleIndex, 'snatched');
-                battleResults[battleIndex] = 'snatched';
-                const sn = document.getElementById('snatchOverlay');
-                if(sn) { sn.querySelector('.snatch-stamp').innerText = '⚡ อีกฝ่ายกดก่อน!'; sn.classList.add('active'); }
-                setTimeout(() => { if(sn) sn.classList.remove('active'); battleAdvanceQ(false); }, 1800);
-
             } else {
-                // ❌ ตอบผิด
+                // ❌ ตอบผิด — 0 คะแนน in-game ข้อนี้ แต่ยังบันทึกเวลาไว้ (tiebreaker)
                 btn.classList.add('incorrect');
                 playSound('wrong');
                 updateBattleProgress(battleIndex, 'wrong');
-                // ถ้าตอบผิด ให้รอ snatched event จากอีกฝ่าย (ถ้าเขาตอบถูก)
-                // หรือรอ timer หมด — battleAdvanceQ จะถูกเรียกจาก timer หรือ snatched handler
+                battleMyTotalTime += timeTaken;
                 isAnswering = false;
             }
             return; // จบ battle path
@@ -3235,8 +3237,27 @@
     let battleHeartbeatInterval = null, lastOppHeartbeat = 0, battleCooldownUntil = 0;
     let battleOppInfo = null, battleMyInfo = null;
     let rematchRequested = false, rematchOppRequested = false;
-    let battlePointsEarned = 0; 
-    const BATTLE_Q_COUNT = 9, BATTLE_TIME_PER_Q = 8;
+    let battlePointsEarned = 0;
+    // ระบบคะแนนใหม่: คะแนน in-game (ตัดสินแพ้ชนะ) แยกจาก Personal Point
+    let battleMyGameScore = 0, battleOppGameScore = 0;
+    let battleMyTotalTime = 0, battleOppTotalTime = 0;
+    let battlePlayerCount = 2;
+    const BATTLE_Q_COUNT = 10, BATTLE_TIME_PER_Q = 8;
+
+    function calcBattleScore(timeTakenMs, nPlayers) {
+        const t = timeTakenMs / 1000;
+        if(nPlayers >= 3) {
+            if(t < 2) return 110;
+            if(t < 4) return 80;
+            if(t < 6) return 55;
+            return 30;
+        } else {
+            if(t < 2) return 100;
+            if(t < 4) return 75;
+            if(t < 6) return 50;
+            return 25;
+        }
+    }
 
     function clearBattleTimers() { if(queueTimer) clearInterval(queueTimer); if(triviaTimer) clearInterval(triviaTimer); }
 
@@ -3336,13 +3357,15 @@
         battlePointsEarned = 0;
         battleResults = []; battleQuestions = []; battleShuffleSeeds = [];
         rematchRequested = false; rematchOppRequested = false;
+        battleMyGameScore = 0; battleOppGameScore = 0;
+        battleMyTotalTime = 0; battleOppTotalTime = 0;
         
         myUiLoaded = false; oppUiLoaded = false; 
 
         st.myPts = st.l.filter(l => l.employee_id === st.u.employee_id).reduce((a,b)=>a+(b.point||0),0);
         document.getElementById('ingameScore').innerText = (st.myPts||0).toLocaleString('th-TH');
         const bBoard = document.getElementById('battleScoreBoardUI');
-        if(bBoard) { bBoard.style.display='flex'; document.getElementById('myBattleScoreDisplay').innerText=st.myPts.toLocaleString('th-TH'); document.getElementById('oppBattleScoreDisplay').innerText="?"; }
+        if(bBoard) { bBoard.style.display='flex'; document.getElementById('myBattleScoreDisplay').innerText='0'; document.getElementById('oppBattleScoreDisplay').innerText='0'; }
         initBattleProgress();
         if(battleChannel) { await sb.removeChannel(battleChannel); battleChannel = null; }
 
@@ -3361,9 +3384,13 @@
                 })
                 .on('broadcast', { event: 'score_update' }, payload => {
                     if(payload.payload.emp_id !== st.u.employee_id) {
-                        const osd = document.getElementById('oppBattleScoreDisplay');
-                        if(osd) osd.innerText = payload.payload.score.toLocaleString('th-TH');
+                        if(payload.payload.gameScore !== undefined) {
+                            battleOppGameScore = payload.payload.gameScore;
+                            const osd = document.getElementById('oppBattleScoreDisplay');
+                            if(osd) osd.innerText = battleOppGameScore.toLocaleString('th-TH');
+                        }
                         if(payload.payload.correct !== undefined) battleOppCorrect = payload.payload.correct;
+                        if(payload.payload.totalTime !== undefined) battleOppTotalTime = payload.payload.totalTime;
                     }
                 })
                 .on('broadcast', { event: 'opponent_left' }, payload => {
@@ -3398,7 +3425,13 @@
                     }
                 })
                 .on('broadcast', { event: 'heartbeat' }, payload => { if(payload.payload.emp_id !== st.u.employee_id) lastOppHeartbeat = Date.now(); })
-                .on('broadcast', { event: 'battle_end_scores' }, payload => { if(payload.payload.emp_id !== st.u.employee_id) battleOppCorrect = payload.payload.correct; })
+                .on('broadcast', { event: 'battle_end_scores' }, payload => {
+                    if(payload.payload.emp_id !== st.u.employee_id) {
+                        battleOppCorrect = payload.payload.correct;
+                        if(payload.payload.gameScore !== undefined) battleOppGameScore = payload.payload.gameScore;
+                        if(payload.payload.totalTime !== undefined) battleOppTotalTime = payload.payload.totalTime;
+                    }
+                })
                 .on('broadcast', { event: 'rematch_request' }, payload => {
                     if(payload.payload.emp_id !== st.u.employee_id) {
                         rematchOppRequested = true;
@@ -3559,36 +3592,76 @@
         if(battleHeartbeatInterval) clearInterval(battleHeartbeatInterval);
         if(readyInterval) clearInterval(readyInterval);
         if(forceStartTimeout) clearTimeout(forceStartTimeout);
-        if(battleChannel) battleChannel.send({type:'broadcast',event:'battle_end_scores',payload:{emp_id:st.u.employee_id,correct:battleMyCorrect}});
-        setTimeout(()=>{ showBattleResult(battleMyCorrect > battleOppCorrect, false, battleMyCorrect === battleOppCorrect); },1500);
+        if(battleChannel) battleChannel.send({type:'broadcast',event:'battle_end_scores',payload:{emp_id:st.u.employee_id,correct:battleMyCorrect,gameScore:battleMyGameScore,totalTime:battleMyTotalTime}});
+        // รอรับคะแนนสุดท้ายจากอีกฝ่ายก่อนตัดสิน
+        setTimeout(() => {
+            // ตัดสินด้วย gameScore ก่อน → ถ้าเท่ากันใช้ totalTime (น้อยกว่า = ตอบเร็วกว่า = ชนะ)
+            let isWin;
+            if(battleMyGameScore !== battleOppGameScore) {
+                isWin = battleMyGameScore > battleOppGameScore;
+            } else {
+                // Tiebreak: เวลาน้อยกว่าชนะ (ถ้ายังเท่ากันอีก = ไม่เป็นไปได้จริงๆ แต่ให้ host ชนะ)
+                isWin = (battleMyTotalTime < battleOppTotalTime) || (battleMyTotalTime === battleOppTotalTime && isBattleHost);
+            }
+            showBattleResult(isWin, false, false);
+        }, 2000);
     }
 
-    function showBattleResult(isWin, isTechWin, isDraw) {
+    async function showBattleResult(isWin, isTechWin, isDraw) {
         isTechWin = isTechWin || false; isDraw = isDraw || false;
         isBattleMode = false; clearInterval(quizInterval);
         const ws = document.getElementById('battleWaitScreen'); if(ws) ws.style.display='none';
-        
+
         if(isTechWin||isWin) { playSound('win'); }
-        else if(!isDraw) { playSound('lose'); }
+        else { playSound('lose'); }
 
         const crown=document.getElementById('resultCrown'), title=document.getElementById('resultTitle'), subtitle=document.getElementById('resultSubtitle');
-        if(isTechWin) { crown.innerText='🏆'; title.innerText='ชนะ Technical Win!'; title.style.color='var(--agri-green)'; subtitle.innerText='คู่แข่งออกจากเกมไป คุณได้รับชัยชนะอัตโนมัติ'; }
-        else if(isDraw) { crown.innerText='🤝'; title.innerText='เสมอ!'; title.style.color='var(--text-secondary)'; subtitle.innerText='ทั้งสองฝั่งตอบถูกเท่ากัน'; }
-        else if(isWin) { crown.innerText='👑'; title.innerText='ชัยชนะ!'; title.style.color='var(--gold)'; subtitle.innerText='คุณเอาชนะคู่แข่งในศึกนี้ได้สำเร็จ'; }
-        else { crown.innerText='💀'; title.innerText='พ่ายแพ้'; title.style.color='var(--mc-red-light)'; subtitle.innerText='คู่แข่งตอบถูกมากกว่า ไม่เป็นไร ลองใหม่ได้!'; }
+        if(isTechWin) {
+            crown.innerText='🏆'; title.innerText='ชนะ Technical Win!'; title.style.color='var(--agri-green)';
+            subtitle.innerText='คู่แข่งออกจากเกมไป คุณได้รับชัยชนะอัตโนมัติ';
+        } else if(isWin) {
+            crown.innerText='👑'; title.innerText='ชัยชนะ!'; title.style.color='var(--gold)';
+            const scoreDiff = battleMyGameScore - battleOppGameScore;
+            subtitle.innerText = scoreDiff === 0
+                ? 'คะแนนเท่ากัน แต่คุณตอบเร็วกว่า!'
+                : 'คุณเอาชนะคู่แข่งด้วยคะแนน ' + battleMyGameScore + ' ต่อ ' + battleOppGameScore;
+        } else {
+            crown.innerText='💀'; title.innerText='พ่ายแพ้'; title.style.color='var(--mc-red-light)';
+            const scoreDiff = battleOppGameScore - battleMyGameScore;
+            subtitle.innerText = scoreDiff === 0
+                ? 'คะแนนเท่ากัน แต่คู่แข่งตอบเร็วกว่า!'
+                : 'คู่แข่งชนะด้วยคะแนน ' + battleOppGameScore + ' ต่อ ' + battleMyGameScore;
+        }
 
         document.getElementById('resultMyName').innerText = battleMyInfo?.name||'ฉัน';
         document.getElementById('resultMySite').innerText = battleMyInfo?.site||'';
-        document.getElementById('resultMyScore').innerText = battleMyCorrect;
+        // แสดงคะแนน in-game (ไม่ใช่จำนวนข้อถูก)
+        document.getElementById('resultMyScore').innerText = battleMyGameScore.toLocaleString('th-TH');
         document.getElementById('resultMyScore').style.color = isWin?'var(--agri-green)':'var(--mc-red-light)';
         document.getElementById('resultOppName').innerText = battleOppInfo?.name||'คู่แข่ง';
         document.getElementById('resultOppSite').innerText = battleOppInfo?.site||'';
-        document.getElementById('resultOppScore').innerText = isTechWin?'-':battleOppCorrect;
+        document.getElementById('resultOppScore').innerText = isTechWin?'-':battleOppGameScore.toLocaleString('th-TH');
         document.getElementById('resultMyCard').classList.toggle('winner', isWin||isTechWin);
-        document.getElementById('resultOppCard').classList.toggle('winner', !isWin && !isTechWin && !isDraw);
-        
-        document.getElementById('resultEarnedPts').innerText = '+'+battlePointsEarned;
-        
+        document.getElementById('resultOppCard').classList.toggle('winner', !isWin&&!isTechWin);
+
+        // มอบรางวัล Personal Point 500 + Site Point 100 ให้ผู้ชนะ
+        if(isWin || isTechWin) {
+            battlePointsEarned = 500;
+            document.getElementById('resultEarnedPts').innerText = '+500 pt + Site +100';
+            // บวก Personal Point ลง leaderboard จริง
+            try {
+                await sb.rpc('award_battle_winner', {
+                    p_emp_id: st.u.employee_id,
+                    p_room_id: currentBattleRoomId,
+                    p_personal_pts: 500,
+                    p_site_pts: 100
+                });
+            } catch(e) { console.warn('award_battle_winner failed', e); }
+        } else {
+            battlePointsEarned = 0;
+            document.getElementById('resultEarnedPts').innerText = '+0 pt';
+        }
+
         const rb=document.getElementById('btnRematch'); rb.innerHTML='<i class="fas fa-redo"></i> แข่งอีกรอบ'; rb.style.animation=''; rb.disabled=false; rb.style.display=isTechWin?'none':'block';
         document.getElementById('battleScoreBoardUI').style.display='none';
         document.getElementById('battleProgressUI').style.display='none';
