@@ -2181,7 +2181,7 @@
     let isPinSetupMode = false;
     let currentPin = '';
     
-    // 🔥 ตัวแปรล็อคห้ามกดยกเลิกตอนกำลังโชว์เฉลยถูก/ผิด
+    // 🔥 ตัวแปรล็อคห้ามกดยกเลิกตอนกำลังโชว์เฉลยถูก/ผิด หรือตอนรอโหลด UI
     let isAnswering = false;
 
     // --- NUMBER FORMATTER (FIX MILLION M) ---
@@ -2189,14 +2189,12 @@
         let num = Number(n);
         if (isNaN(num)) return n; // กันเหนียวกรณีพัง
         if (num >= 1000000) {
-            // ตัด .0 ทิ้งถ้าเป็น 1.0M จะได้กลายเป็น 1M สวยๆ
             return (num / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
         }
         return num.toLocaleString('th-TH');
     }
 	
 	// --- SCORE ANIMATOR (ROLLING NUMBER) ---
-    // --- SCORE ANIMATOR (ROLLING NUMBER) ---
     let currentScoreAnimation = null;
     function animateScore(id, start, end, duration) {
         let obj = document.getElementById(id);
@@ -2236,8 +2234,6 @@
     function openRankInfo() { document.getElementById('rankInfoModal').style.display = 'flex'; }
     function closeRankInfo() { document.getElementById('rankInfoModal').style.display = 'none'; }
 
-    // --- 🃏 PLAYER STATS LOGIC ---
-    // --- 🃏 PLAYER STATS LOGIC ---
     // --- 🃏 PLAYER STATS LOGIC ---
     async function openPlayerStats(empId) {
         const modal = document.getElementById('playerModal');
@@ -2307,13 +2303,8 @@
     function closePlayerStats() { document.getElementById('playerModal').classList.remove('active'); }
 
     // --- FORGOT PIN MODAL LOGIC ---
-    function openForgotPinModal() {
-        document.getElementById('forgotPinModal').style.display = 'flex';
-    }
-
-    function closeForgotPinModal() {
-        document.getElementById('forgotPinModal').style.display = 'none';
-    }
+    function openForgotPinModal() { document.getElementById('forgotPinModal').style.display = 'flex'; }
+    function closeForgotPinModal() { document.getElementById('forgotPinModal').style.display = 'none'; }
 
     // --- GAME ENGINE ---
     function checkCheating(timeTaken) {
@@ -2326,7 +2317,6 @@
         document.querySelectorAll('.page-container').forEach(p => p.classList.remove('active')); 
         document.getElementById(id).classList.add('active'); 
         
-        // 🔥 เพิ่มการรีเฟรชข้อมูลใหม่ทุกครั้งที่สลับกลับมาหน้า Dashboard
         if (id === 'pgMain' && st.u && st.u.type !== 'admin') {
             fetchD().then(() => render());
         }
@@ -2360,9 +2350,8 @@
         if (myIdx !== -1) {
             const myPts = users[myIdx].pts;
             document.getElementById('myRankVal').innerText = "#" + (myIdx + 1);
-            document.getElementById('myScoreVal').innerText = myPts.toLocaleString('th-TH'); // โชว์เต็มๆ ไม่ย่อ M
+            document.getElementById('myScoreVal').innerText = myPts.toLocaleString('th-TH');
 
-            // Calculate Rank logic
             const rank = getRankInfo(myPts);
             
             document.getElementById('rankNameDisplay').innerText = rank.name;
@@ -2432,7 +2421,7 @@
 
     function pCol(u,r) {
         const rInfo = getRankInfo(u.pts); 
-        const firstName = u.name.split(' ')[0]; // 🔥 ตัดเอาเฉพาะชื่อก่อนเว้นวรรค
+        const firstName = u.name.split(' ')[0];
 
         return `<div class="pod-char r${r}" onclick="openPlayerStats('${u.employee_id}')">
                     <div class="pod-img">${r}</div>
@@ -2467,7 +2456,7 @@
             if (st.isPeak) {
                 btn.className = 'btn-play btn-modern peak-active';
                 btn.innerHTML = `<i class="fas fa-bolt"></i> โหมด x2 (${timeTxt})`;
-                if(isQuizPage && !isBattleMode) { // 🛠️ ป้องกัน Error ตอนอยู่โหมดแบทเทิล
+                if(isQuizPage && !isBattleMode) { 
                     banner.style.display = 'block'; 
                     let pTimer = document.getElementById('peakTimer');
                     if(pTimer) pTimer.innerText = timeTxt; 
@@ -2513,8 +2502,6 @@
         loadQ(vq);
     }
 
-    // [Removed: duplicate loadQ — battle-aware version below]
-
     async function ans(v, btn) {
         if(isAnswering) return; 
         isAnswering = true; 
@@ -2524,7 +2511,6 @@
         document.getElementById('panicOverlay').classList.remove('active');
         document.querySelectorAll('.choice-btn').forEach(b=>b.disabled=true);
 
-        // ใส่ระบบ Timeout 5 วิ กันจอค้าง
         const fetchPromise = sb.rpc('submit_answer', {
             p_emp_id: st.u.employee_id, p_question_id: st.curQ.id, p_selected_choice: parseInt(v), p_time_taken: timeTaken, p_streak: st.s
         });
@@ -2558,7 +2544,7 @@
             st.myPts += data.points; 
 
             if(isBattleMode) {
-                battlePointsEarned += data.points; // คำนวณ Point เพื่อแสดงในตอนจบ
+                battlePointsEarned += data.points; 
                 battleMyCorrect++;
                 updateBattleProgress(battleIndex, 'correct');
                 if(battleChannel) {
@@ -2577,7 +2563,6 @@
             playSound('wrong');
             if(isBattleMode) {
                 updateBattleProgress(battleIndex, 'wrong');
-                // ลบการทำงานให้ข้ามข้ออัตโนมัติออก รออีกคนหรือรอให้เวลาหมดเท่านั้น
             } else {
                 setTimeout(()=>{ isAnswering = false; endQ(true); }, 1000); 
             }
@@ -2593,11 +2578,9 @@
         }
     }
     
-    // ย้ายการอัปเดตกระดานคะแนน (fetchD) มาทำแค่ตอนออกจากเกมครั้งเดียว
     async function exitQuiz() { 
         if(isAnswering) return; 
         
-        // ดักจับการกดออกกลางคันระหว่าง Battle 
         if(isBattleMode && battleIndex < BATTLE_Q_COUNT) {
             if(!confirm("คุณกำลังอยู่ในโหมด Battle หากกดตกลงจะเป็นการยอมแพ้และออกจากเกมทันที คุณแน่ใจหรือไม่?")) {
                 return;
@@ -2613,9 +2596,7 @@
         document.getElementById('panicOverlay').classList.remove('active');
         var snOv = document.getElementById('snatchOverlay'); if(snOv) snOv.classList.remove('active');
         
-        // เคลียร์โหมด Battle
         if(currentBattleRoomId) {
-            // 🛠️ ส่งสัญญาณบอกคู่แข่งว่าเราออกแล้ว
             if(battleChannel) {
                 battleChannel.send({ type: 'broadcast', event: 'opponent_left', payload: {} });
                 await sb.removeChannel(battleChannel); 
@@ -2789,7 +2770,6 @@
             render(); 
             nav('pgMain');
 
-            // --- เช็คว่าเข้าใช้งานครั้งแรกหรือไม่ (เพื่อเปิด Tutorial) ---
             const myLogs = st.l.filter(log => log.employee_id === st.u.employee_id);
             if(myLogs.length === 0) {
                 setTimeout(() => {
@@ -3093,7 +3073,7 @@
 
     function endTutorial() {
         isTutorialMode = false;
-        if(tutInterval) clearInterval(tutInterval); // หยุดการตามกรอบ
+        if(tutInterval) clearInterval(tutInterval); 
         
         document.getElementById('tutBlocker').style.display = 'none';
         document.getElementById('tutSpotlight').style.display = 'none';
@@ -3110,7 +3090,6 @@
         }
     }
 	
-	// --- Custom Alert Function ---
     function showAlert(msg, title = "แจ้งเตือน", icon = "fa-info-circle", color = "var(--gold)", callback = null) {
         document.getElementById('alertTitle').innerText = title;
         document.getElementById('alertText').innerText = msg;
@@ -3122,14 +3101,18 @@
         
         document.getElementById('alertBtn').onclick = () => {
             modal.style.display = 'none';
-            if (callback) callback(); // ทำงานต่อหลังจากกดตกลง
+            if (callback) callback(); 
         };
     }
+
     // =========================================
-    // ⚔️ REALTIME BATTLE MODE LOGIC v2.0
+    // ⚔️ REALTIME BATTLE MODE LOGIC (SYNC FIX)
     // =========================================
     
-    // --- Sound Effects (Web Audio API) ---
+    // ตัวแปรเพิ่มสำหรับเช็คสถานะการโหลด UI แบบ 2 ฝั่ง
+    let myUiLoaded = false;
+    let oppUiLoaded = false;
+
     let audioCtx = null; let soundEnabled = true;
     function initAudio() { if(!audioCtx) try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e){} }
     function playSound(type) {
@@ -3149,7 +3132,6 @@
     }
     function toggleSound() { soundEnabled=!soundEnabled; document.getElementById('soundIcon').className=soundEnabled?'fas fa-volume-up':'fas fa-volume-mute'; }
 
-    // --- GREAT Trivia ---
     const GREAT_TRIVIA = [
         "GREAT ย่อมาจาก Grow, Reliable, Energized, Adaptive, และ Together",
         "G - Grow: เติบโตไปด้วยกัน หมั่นแชร์ความรู้และช่วยเหลือทีมเสมอ",
@@ -3183,7 +3165,6 @@
         "การตัดสินใจ: ทำงานเป็นทีม เปิดรับฟังข้อมูลจากทุกฝ่ายก่อนตัดสินใจ (T)"
     ];
 
-    // --- Battle State ---
     let queueTimer = null, triviaTimer = null, queueSeconds = 0;
     let currentBattleRoomId = null, isBattleMode = false, isBattleHost = false;
     let myReady = false, oppReady = false, battleChannel = null;
@@ -3194,12 +3175,11 @@
     let battleHeartbeatInterval = null, lastOppHeartbeat = 0, battleCooldownUntil = 0;
     let battleOppInfo = null, battleMyInfo = null;
     let rematchRequested = false, rematchOppRequested = false;
-    let battlePointsEarned = 0; // เพิ่มตัวแปรเก็บคะแนนรวมตอนจบ Battle
+    let battlePointsEarned = 0; 
     const BATTLE_Q_COUNT = 9, BATTLE_TIME_PER_Q = 8;
 
     function clearBattleTimers() { if(queueTimer) clearInterval(queueTimer); if(triviaTimer) clearInterval(triviaTimer); }
 
-    // Seeded shuffle (ตัวเลือกตรงกัน 2 ฝั่ง)
     function seededShuffle(arr, seed) {
         let s = seed;
         function rand() { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; }
@@ -3208,14 +3188,12 @@
         return a;
     }
 
-    // Battle Progress Dots
     function initBattleProgress() {
         const el = document.getElementById('battleProgressUI'); el.style.display = 'flex';
         el.innerHTML = Array.from({length: BATTLE_Q_COUNT}, (_, i) => `<div class="bp-dot" id="bpDot${i}">${i+1}</div>`).join('');
     }
     function updateBattleProgress(idx, status) { const d = document.getElementById('bpDot'+idx); if(d) d.className='bp-dot '+status; }
 
-    // --- 1. เข้าคิวรอ ---
     async function enterBattleQueue() {
         if(!st.canPlay) return;
         if(Date.now() < battleCooldownUntil) {
@@ -3243,7 +3221,6 @@
             queueTimer = setInterval(async () => {
                 queueSeconds++;
                 document.getElementById('queueTimerStr').innerText = Math.floor(queueSeconds/60).toString().padStart(2,'0') + ':' + (queueSeconds%60).toString().padStart(2,'0');
-                // Exponential polling (10, 15, 20, 25, max 30 วิ)
                 const pollInt = Math.min(10 + Math.floor(queueSeconds/30)*5, 30);
                 if(queueSeconds % pollInt === 0 && currentBattleRoomId) {
                     const { data: cr } = await sb.from('battle_rooms').select('status, p2_info').eq('id', currentBattleRoomId).single();
@@ -3259,7 +3236,6 @@
         }
     }
 
-    // --- 2. ยกเลิก ---
     async function cancelBattleQueue() {
         clearBattleTimers();
         if(battleChannel) { await sb.removeChannel(battleChannel); battleChannel = null; }
@@ -3267,7 +3243,6 @@
         battleCooldownUntil = Date.now() + 10000; nav('pgMain');
     }
 
-    // --- 3. Trivia ---
     function showRandomTrivia() {
         const fact = GREAT_TRIVIA[Math.floor(Math.random()*GREAT_TRIVIA.length)];
         const box = document.getElementById('triviaBox');
@@ -3276,7 +3251,6 @@
         const a = document.getElementById('triviaA'); a.style.fontSize="16px"; a.style.fontWeight="600"; a.style.lineHeight="1.5"; a.innerText = fact;
     }
 
-    // --- 4. จับคู่สำเร็จ ---
     function triggerMatchFound(myInfo, opponentInfo) {
         clearBattleTimers(); playSound('match');
         battleOppInfo = opponentInfo;
@@ -3296,13 +3270,15 @@
         setTimeout(() => startBattleQuiz(), 3500);
     }
 
-    // --- 5. เริ่มเกม ---
     async function startBattleQuiz() {
         isBattleMode = true; st.s = 0; isAnswering = false;
         battleIndex = 0; battleMyCorrect = 0; battleOppCorrect = 0;
         battlePointsEarned = 0;
         battleResults = []; battleQuestions = []; battleShuffleSeeds = [];
         rematchRequested = false; rematchOppRequested = false;
+        
+        myUiLoaded = false; oppUiLoaded = false; 
+
         st.myPts = st.l.filter(l => l.employee_id === st.u.employee_id).reduce((a,b)=>a+(b.point||0),0);
         document.getElementById('ingameScore').innerText = (st.myPts||0).toLocaleString('th-TH');
         const bBoard = document.getElementById('battleScoreBoardUI');
@@ -3312,6 +3288,17 @@
 
         if(currentBattleRoomId) {
             battleChannel = sb.channel('battle_sync_' + currentBattleRoomId)
+                .on('broadcast', { event: 'ui_loaded' }, payload => {
+                    // 🔥 รับสัญญาณว่าฝ่ายตรงข้ามโหลดหน้าข้อสอบเสร็จแล้ว
+                    if(payload.payload.emp_id !== st.u.employee_id) {
+                        oppUiLoaded = true;
+                        checkUiReady(); // ตรวจสอบว่าพร้อม 2 ฝ่ายยัง
+                    }
+                })
+                .on('broadcast', { event: 'start_question' }, payload => {
+                    // 🔥 รับสัญญาณจาก Host ให้เริ่มเล่นพร้อมกัน
+                    executeGoSequence();
+                })
                 .on('broadcast', { event: 'score_update' }, payload => {
                     if(payload.payload.emp_id !== st.u.employee_id) {
                         const osd = document.getElementById('oppBattleScoreDisplay');
@@ -3357,7 +3344,6 @@
                 });
         }
 
-        // Heartbeat ทุก 3 วิ
         lastOppHeartbeat = Date.now();
         battleHeartbeatInterval = setInterval(() => {
             if(battleChannel) try{battleChannel.send({type:'broadcast',event:'heartbeat',payload:{emp_id:st.u.employee_id}});}catch(e){}
@@ -3373,7 +3359,6 @@
         document.getElementById('peakBanner').style.color='white';
         document.getElementById('peakBanner').innerHTML='⚔️ SITE BATTLE MODE';
 
-        // Host สร้างชุดคำถาม 9 ข้อ + shuffle seeds
         if(isBattleHost) {
             const vq = st.q.filter(q=>q.is_active!==false);
             const shuffled = shuffle([...vq]);
@@ -3384,27 +3369,77 @@
         showBattleWait("กำลังเตรียมสมรภูมิ...");
     }
 
-    // --- 6. โหลดคำถาม Battle ---
+    // --- ฟังก์ชันเช็คว่าโหลดหน้า UI เสร็จทั้ง 2 ฝ่ายรึยัง ---
+    function checkUiReady() {
+        // ให้ Host เป็นคนตัดสินใจสั่งเริ่ม
+        if (isBattleHost && myUiLoaded && oppUiLoaded) {
+            myUiLoaded = false;
+            oppUiLoaded = false;
+            
+            // ส่งสัญญาณไปบอก Client ว่าเริ่มได้
+            if (battleChannel) {
+                battleChannel.send({ type: 'broadcast', event: 'start_question', payload: {} });
+            }
+            // Host เองก็รันคำสั่งเริ่มด้วย
+            executeGoSequence(); 
+        }
+    }
+
+    // --- ฟังก์ชันกระชากป้าย Ready ออก แล้วเริ่มจับเวลา ---
+    function executeGoSequence() {
+        const overlay = document.getElementById('readyOverlay');
+        if (!isAnswering || !overlay) return; // ป้องกันการรันซ้ำซ้อน
+        if(forceStartTimeout) clearTimeout(forceStartTimeout);
+
+        overlay.innerText = "Go!";
+        overlay.style.animation = "pulse 0.3s forwards";
+        playSound('tick');
+
+        // หน่วงเวลาให้เห็นคำว่า Go! แป๊บเดียว แล้วลุยเลย
+        setTimeout(() => {
+            overlay.style.display = 'none';
+            isAnswering = false; // ปลดล็อคให้กดตอบได้
+            st.qStartTime = Date.now(); // เริ่มจับเวลาตั้งแต่วินาทีที่เปิดให้กด
+
+            const tBar=document.getElementById('tBar'), panic=document.getElementById('panicOverlay'), countBox=document.getElementById('bigCountdown');
+            let timeLeft = BATTLE_TIME_PER_Q;
+
+            clearInterval(quizInterval);
+            quizInterval = setInterval(() => {
+                if(isAnswering) return;
+                timeLeft -= 0.1;
+                tBar.style.width = (timeLeft/BATTLE_TIME_PER_Q)*100+'%';
+                countBox.innerText = Math.max(0,timeLeft).toFixed(1);
+                if(timeLeft <= 3.0) { tBar.style.background='linear-gradient(90deg, var(--mc-red), var(--mc-red-light))'; panic.classList.add('active'); countBox.classList.add('urgent'); if(Math.floor(timeLeft*10)%10===0) playSound('tick'); }
+                if(timeLeft <= 0) { clearInterval(quizInterval); isAnswering=false; updateBattleProgress(battleIndex,'wrong'); battleAdvanceQ(false); }
+            }, 100);
+        }, 800);
+    }
+
+    // --- โหลดคำถาม Battle (ปรับให้รอเพื่อนก่อนค่อยเริ่มจับเวลา) ---
     function battleLoadQ() {
         if(battleIndex >= BATTLE_Q_COUNT || battleIndex >= battleQuestions.length) { finishBattle(); return; }
         if(readyInterval) clearInterval(readyInterval);
         if(forceStartTimeout) clearTimeout(forceStartTimeout);
-        isAnswering = true; // ล็อคปุ่มไว้ก่อนจนกว่าจะนับถอยหลัง Ready เสร็จ
+        
+        isAnswering = true; // ล็อคปุ่มเอาไว้ก่อนจนกว่าจะซิงค์กันเสร็จ
+        myUiLoaded = false; oppUiLoaded = false; 
+
         const ws = document.getElementById('battleWaitScreen'); if(ws) ws.style.display='none';
         const sn = document.getElementById('snatchOverlay'); if(sn) sn.classList.remove('active');
         const tBar=document.getElementById('tBar'), panic=document.getElementById('panicOverlay'), countBox=document.getElementById('bigCountdown');
         tBar.style.width='100%'; tBar.style.background='linear-gradient(90deg, var(--agri-green), var(--agri-green-light))';
         panic.classList.remove('active'); countBox.classList.remove('urgent'); countBox.innerText=BATTLE_TIME_PER_Q+".0";
         clearInterval(quizInterval);
-        st.curQ = battleQuestions[battleIndex]; st.lastId = st.curQ.id; st.qStartTime = Date.now();
+        st.curQ = battleQuestions[battleIndex]; st.lastId = st.curQ.id; 
         updateBattleProgress(battleIndex, 'active');
         document.getElementById('streak').innerText = st.s;
         const seed = battleShuffleSeeds[battleIndex] || (battleIndex+1)*12345;
         const choiceOrder = seededShuffle([1,2,3,4], seed);
         
-        // 🔥 เพิ่มการดีเลย์ 2 วิเพื่อซิงค์ทั้งคู่ให้ทันกัน
+        // เรนเดอร์ UI คำถาม และแปะป้าย Ready ค้างไว้
         document.getElementById('qArea').innerHTML = `
-            <div id="readyOverlay" style="position:absolute; inset:0; background:rgba(0,0,0,0.85); z-index:20000; display:flex; justify-content:center; align-items:center; font-size:60px; font-weight:900; color:var(--gold); border-radius:20px; text-shadow: 0 0 30px rgba(251,191,36,0.6);">Ready...</div>
+            <div id="readyOverlay" style="position:absolute; inset:0; background:rgba(0,0,0,0.85); z-index:20000; display:flex; justify-content:center; align-items:center; font-size:60px; font-weight:900; color:var(--gold); border-radius:20px; text-shadow: 0 0 30px rgba(251,191,36,0.6); animation: pulseGold 1s infinite;">Ready...</div>
             <div style="text-align:center; animation: slideUpFade 0.4s ease;">
                 <div style="font-size:13px; color:var(--text-muted); margin-bottom:8px; letter-spacing:2px;">ข้อ ${battleIndex+1} / ${BATTLE_Q_COUNT}</div>
                 <div class="q-txt">${st.curQ.question}</div>
@@ -3413,31 +3448,23 @@
                 ${choiceOrder.map((i, idx) => `<button class="choice-btn" style="animation: slideUpFade 0.4s ease ${idx*0.1}s backwards;" onclick="ans('${i}',this)">${st.curQ['option_'+i]}</button>`).join('')}
             </div>`;
 
-        let readySecs = 2;
-        let readyInt = setInterval(() => {
-            readySecs--;
-            if(readySecs === 1) document.getElementById('readyOverlay').innerText = "Go!";
-            if(readySecs <= 0) {
-                clearInterval(readyInt);
-                document.getElementById('readyOverlay').style.display = 'none';
-                isAnswering = false; // ปลดล็อคปุ่ม
-                st.qStartTime = Date.now(); // รีเซ็ตเวลาเริ่มต้นจริงๆ
-                
-                // เริ่มนับ 8 วิ
-                let timeLeft = BATTLE_TIME_PER_Q;
-                quizInterval = setInterval(() => {
-                    if(isAnswering) return;
-                    timeLeft -= 0.1;
-                    tBar.style.width = (timeLeft/BATTLE_TIME_PER_Q)*100+'%';
-                    countBox.innerText = Math.max(0,timeLeft).toFixed(1);
-                    if(timeLeft <= 3.0) { tBar.style.background='linear-gradient(90deg, var(--mc-red), var(--mc-red-light))'; panic.classList.add('active'); countBox.classList.add('urgent'); if(Math.floor(timeLeft*10)%10===0) playSound('tick'); }
-                    if(timeLeft <= 0) { clearInterval(quizInterval); isAnswering=false; updateBattleProgress(battleIndex,'wrong'); battleAdvanceQ(false); }
-                }, 100);
+        // ส่งสัญญาณบอกเพื่อนว่าโหลด UI เสร็จแล้วนะ
+        myUiLoaded = true;
+        if (battleChannel) {
+            battleChannel.send({ type: 'broadcast', event: 'ui_loaded', payload: { emp_id: st.u.employee_id } });
+        }
+
+        // ลองเช็คดูว่าอีกฝั่งบังเอิญส่งมาหาเราตอนกำลังเรนเดอร์ไหม
+        checkUiReady();
+
+        // ใส่ Timeout เผื่ออีกฝั่งเน็ตตัดหรือส่งกลับมาไม่ได้ ภายใน 5 วิ จะบังคับเริ่ม (ไม่ให้จอกดค้าง)
+        forceStartTimeout = setTimeout(() => {
+            if (isAnswering && document.getElementById('readyOverlay')) {
+                executeGoSequence();
             }
-        }, 1000);
+        }, 5000);
     }
 
-    // --- 7. ไปข้อถัดไป ---
     function battleAdvanceQ(wasCorrect) {
         if(!wasCorrect && !battleResults[battleIndex]) battleResults[battleIndex]='miss';
         else if(wasCorrect) battleResults[battleIndex]='correct';
@@ -3446,7 +3473,6 @@
         showBattleWait("รอคู่แข่ง...");
     }
 
-    // --- 8. จบเกม ---
     function finishBattle() {
         clearInterval(quizInterval);
         if(battleHeartbeatInterval) clearInterval(battleHeartbeatInterval);
@@ -3456,7 +3482,6 @@
         setTimeout(()=>{ showBattleResult(battleMyCorrect > battleOppCorrect, false, battleMyCorrect === battleOppCorrect); },1500);
     }
 
-    // --- 9. หน้าสรุปผล ---
     function showBattleResult(isWin, isTechWin, isDraw) {
         isTechWin = isTechWin || false; isDraw = isDraw || false;
         isBattleMode = false; clearInterval(quizInterval);
@@ -3481,7 +3506,6 @@
         document.getElementById('resultMyCard').classList.toggle('winner', isWin||isTechWin);
         document.getElementById('resultOppCard').classList.toggle('winner', !isWin && !isTechWin && !isDraw);
         
-        // 🔥 โชว์คะแนนรวมที่ได้จากการตอบถูกในแมตช์นี้ (สะท้อนค่าที่เข้าไปใน DB จริงๆ)
         document.getElementById('resultEarnedPts').innerText = '+'+battlePointsEarned;
         
         const rb=document.getElementById('btnRematch'); rb.innerHTML='<i class="fas fa-redo"></i> แข่งอีกรอบ'; rb.style.animation=''; rb.disabled=false; rb.style.display=isTechWin?'none':'block';
@@ -3490,7 +3514,6 @@
         nav('pgBattleResult');
     }
 
-    // --- 10. กลับหน้าหลัก ---
     async function exitBattleResult() {
         if(battleChannel) { await sb.removeChannel(battleChannel); battleChannel=null; }
         if(currentBattleRoomId) { await sb.rpc('leave_battle',{p_room_id:currentBattleRoomId}); currentBattleRoomId=null; }
@@ -3498,7 +3521,6 @@
         load(true); await fetchD(); render(); load(false); nav('pgMain');
     }
 
-    // --- 11. Rematch ---
     function requestRematch() {
         rematchRequested=true;
         if(battleChannel) battleChannel.send({type:'broadcast',event:'rematch_request',payload:{emp_id:st.u.employee_id}});
@@ -3514,7 +3536,6 @@
 
     function showConnToast(show) { document.getElementById('connToast').style.display=show?'block':'none'; if(show) setTimeout(()=>showConnToast(false),5000); }
 
-    // --- checkBothReady + showBattleWait ---
     function checkBothReady() {
         if(isBattleHost && myReady && oppReady) { myReady=false; oppReady=false; setTimeout(()=>battleLoadQ(),1500); }
         if(!isBattleHost && myReady && battleQuestions.length >= BATTLE_Q_COUNT) { myReady=false; oppReady=false; setTimeout(()=>battleLoadQ(),1500); }
@@ -3534,7 +3555,6 @@
         ws.style.display = 'flex';
     }
 
-    // --- loadQ (unified: normal mode only, battle uses battleLoadQ) ---
     function loadQ(lst, forceQ) {
         forceQ = forceQ || null;
         if(readyInterval) clearInterval(readyInterval);
@@ -3565,9 +3585,6 @@
         },100);
     }
 
-    // =========================================
-    // 🛡️ Anti-Ghost Queue (15 วินาที)
-    // =========================================
     let hideTimeout = null;
     document.addEventListener("visibilitychange", () => {
         const isQueueActive = document.getElementById('pgBattleQueue').classList.contains('active');
