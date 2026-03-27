@@ -1,7 +1,7 @@
 <!DOCTYPE html><html lang="th"><head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
-  <title>V.1 get GREAT by Human Resources Development</title>
+  <title>get GREAT by Human Resources Development</title>
   
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=Kanit:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
@@ -1547,7 +1547,7 @@
         .rb-grid { grid-template-columns:repeat(5, 1fr); gap:3px; }
         .rb-cell { border-radius:6px; }
         .rb-cell .rb-pts { font-size:10px; }
-        .result-wrap { padding:15px 12px; overflow-y:auto; justify-content:flex-start; padding-top:30px; }
+        .result-wrap { padding:12px 10px 100px 10px; overflow-y:auto; justify-content:flex-start; padding-top:20px; -webkit-overflow-scrolling:touch; }
         .result-crown { font-size:45px; margin-bottom:8px; }
         .result-title { font-size:24px; }
         .result-subtitle { font-size:13px; margin-bottom:15px; }
@@ -1793,7 +1793,7 @@
     .opp-answer-toast { position:fixed; top:60px; left:50%; transform:translateX(-50%); background:rgba(30,64,175,0.95); color:white; padding:8px 18px; border-radius:20px; font-size:13px; font-weight:700; z-index:8999; display:none; animation:slideDownFade 0.3s ease; font-family:'Kanit',sans-serif; backdrop-filter:blur(8px); pointer-events:none; }
     .opp-answer-toast.show { display:block; }
     /* --- BATTLE RESULT SCREEN --- */
-    .result-wrap { height:100%; display:flex; flex-direction:column; justify-content:center; align-items:center; background:radial-gradient(circle at center, rgba(251,191,36,0.1) 0%, var(--bg-dark) 70%); padding:20px; text-align:center; position:relative; overflow:hidden; }
+    .result-wrap { height:100%; display:flex; flex-direction:column; justify-content:flex-start; align-items:center; background:radial-gradient(circle at center, rgba(251,191,36,0.1) 0%, var(--bg-dark) 70%); padding:20px 15px 120px 15px; text-align:center; position:relative; overflow-y:auto; -webkit-overflow-scrolling:touch; padding-top:25px; }
     .result-crown { font-size:60px; margin-bottom:15px; animation:float 2s infinite ease-in-out; }
     .result-title { font-size:32px; font-weight:900; margin-bottom:5px; text-shadow:0 0 30px rgba(255,255,255,0.3); }
     .result-subtitle { color:var(--text-muted); font-size:16px; margin-bottom:30px; }
@@ -3617,6 +3617,7 @@
 
     // --- เริ่มจับเวลาข้อปัจจุบัน (ทั้งคู่เรียกฟังก์ชันนี้พร้อมกัน) ---
     function startQuestionTimer() {
+        const toast = document.getElementById('oppAnswerToast'); if(toast) toast.classList.remove('show');
         if(forceStartTimeout) clearTimeout(forceStartTimeout);
         isAnswering = false; // ปลดล็อคให้กดตอบได้
         st.qStartTime = Date.now();
@@ -3699,14 +3700,18 @@
         isAdvancingQ = true;
         if(!wasCorrect && !battleResults[battleIndex]) battleResults[battleIndex]='miss';
         clearInterval(quizInterval);
-        battleIndex++;
-        if(battleIndex >= BATTLE_Q_COUNT) { finishBattle(); return; }
-        showBattleWait("รอคู่แข่ง...");
+        // delay เล็กน้อยให้ผู้เล่นเห็นผลก่อน advance
+        setTimeout(() => {
+            if(!isBattleMode) return;
+            battleIndex++;
+            if(battleIndex >= BATTLE_Q_COUNT) { finishBattle(); return; }
+            showBattleWait("รอคู่แข่ง...");
+        }, 600);
     }
 
     function checkBothAnsweredAndAdvance() {
         if(myAnsweredThisQ && oppAnsweredThisQ && !isAdvancingQ) {
-            setTimeout(() => battleAdvanceQ(false), 800);
+            battleAdvanceQ(false);
         }
     }
 
@@ -3822,26 +3827,38 @@
     }
 
     // --- แสดง per-question breakdown ในหน้าผลลัพธ์ ---
-    function renderBreakdown() {
+    async function renderBreakdown() {
         const myGrid = document.getElementById('rbMyGrid');
         const oppGrid = document.getElementById('rbOppGrid');
-        if(!myGrid || !oppGrid) return;
+        if(!myGrid || !oppGrid || !currentBattleRoomId) return;
         
-        let myHtml = '', oppHtml = '';
-        for(let q = 0; q < BATTLE_Q_COUNT; q++) {
-            const h = battleQHistory[q] || {};
-            const myWon = h.winner === 'me';
-            const oppWon = h.winner === 'opp';
-            const myClass = myWon ? 'won' : (h.myCorrect ? 'draw' : 'lost');
-            const oppClass = oppWon ? 'won' : (h.oppCorrect ? 'draw' : 'lost');
-            const myCls = h.myScore > 0 || h.myCorrect !== undefined ? myClass : 'empty';
-            const oppCls = h.oppScore > 0 || h.oppCorrect !== undefined ? oppClass : 'empty';
+        // ดึงข้อมูลจาก DB โดยตรง (ถูกต้อง 100%)
+        try {
+            const { data: answers } = await sb.from('battle_answers')
+                .select('emp_id, q_idx, is_correct, total_points, time_taken')
+                .eq('room_id', currentBattleRoomId)
+                .order('q_idx');
             
-            myHtml += '<div class="rb-cell ' + myCls + '"><div class="rb-q">Q' + (q+1) + '</div><div class="rb-pts">' + (h.myScore||0) + '</div></div>';
-            oppHtml += '<div class="rb-cell ' + oppCls + '"><div class="rb-q">Q' + (q+1) + '</div><div class="rb-pts">' + (h.oppScore||0) + '</div></div>';
-        }
-        myGrid.innerHTML = '<div style="grid-column:1/-1;font-size:11px;color:#60A5FA;font-weight:700;margin-bottom:4px;">🔵 ' + (battleMyInfo?.name||'ฉัน') + '</div>' + myHtml;
-        oppGrid.innerHTML = '<div style="grid-column:1/-1;font-size:11px;color:#F87171;font-weight:700;margin-bottom:4px;">🔴 ' + (battleOppInfo?.name||'คู่แข่ง') + '</div>' + oppHtml;
+            if(!answers) return;
+            
+            const myId = String(st.u.employee_id);
+            let myHtml = '', oppHtml = '';
+            
+            for(let q = 0; q < BATTLE_Q_COUNT; q++) {
+                const myAns = answers.find(a => a.emp_id === myId && a.q_idx === q);
+                const oppAns = answers.find(a => a.emp_id !== myId && a.q_idx === q);
+                
+                const myPts = myAns ? myAns.total_points : 0;
+                const oppPts = oppAns ? oppAns.total_points : 0;
+                const myCls = myPts > 0 ? 'won' : (myAns && myAns.is_correct ? 'draw' : (myAns ? 'lost' : 'empty'));
+                const oppCls = oppPts > 0 ? 'won' : (oppAns && oppAns.is_correct ? 'draw' : (oppAns ? 'lost' : 'empty'));
+                
+                myHtml += '<div class="rb-cell ' + myCls + '"><div class="rb-q">Q' + (q+1) + '</div><div class="rb-pts">' + myPts + '</div></div>';
+                oppHtml += '<div class="rb-cell ' + oppCls + '"><div class="rb-q">Q' + (q+1) + '</div><div class="rb-pts">' + oppPts + '</div></div>';
+            }
+            myGrid.innerHTML = '<div style="grid-column:1/-1;font-size:11px;color:#60A5FA;font-weight:700;margin-bottom:4px;">🔵 ' + (battleMyInfo?.name||'ฉัน') + '</div>' + myHtml;
+            oppGrid.innerHTML = '<div style="grid-column:1/-1;font-size:11px;color:#F87171;font-weight:700;margin-bottom:4px;">🔴 ' + (battleOppInfo?.name||'คู่แข่ง') + '</div>' + oppHtml;
+        } catch(e) { console.warn('renderBreakdown failed:', e); }
     }
 
     async function exitBattleResult() {
@@ -3868,8 +3885,8 @@
 
     function checkBothReady() {
         // 🔧 FIX A2: P2 ต้องเช็ค oppReady ด้วย ไม่ใช่แค่รอ questions มาครบ
-        if(isBattleHost && myReady && oppReady) { myReady=false; oppReady=false; setTimeout(()=>battleLoadQ(),1500); }
-        if(!isBattleHost && myReady && oppReady && battleQuestions.length >= BATTLE_Q_COUNT) { myReady=false; oppReady=false; setTimeout(()=>battleLoadQ(),1500); }
+        if(isBattleHost && myReady && oppReady) { myReady=false; oppReady=false; setTimeout(()=>battleLoadQ(),500); }
+        if(!isBattleHost && myReady && oppReady && battleQuestions.length >= BATTLE_Q_COUNT) { myReady=false; oppReady=false; setTimeout(()=>battleLoadQ(),500); }
     }
 
     function showBattleWait(customText) {
@@ -3879,9 +3896,9 @@
         if(forceStartTimeout) clearTimeout(forceStartTimeout);
         // 🔧 FIX A3: ส่ง q_idx ไปด้วยเพื่อป้องกัน ready ข้อเก่ามาปลุก checkBothReady ข้อใหม่
         const currentQIdx = battleIndex;
-        readyInterval = setInterval(()=>{ if(battleChannel) try{battleChannel.send({type:'broadcast',event:'player_ready',payload:{q_idx:currentQIdx}});}catch(e){} },1000);
+        readyInterval = setInterval(()=>{ if(battleChannel) try{battleChannel.send({type:'broadcast',event:'player_ready',payload:{q_idx:currentQIdx, emp_id:st.u.employee_id}});}catch(e){} },1000);
         checkBothReady();
-        if(isBattleHost) { forceStartTimeout = setTimeout(()=>{ if(myReady){oppReady=true;checkBothReady();} },4000); }
+        if(isBattleHost) { forceStartTimeout = setTimeout(()=>{ if(myReady){oppReady=true;checkBothReady();} },3000); }
         let ws = document.getElementById('battleWaitScreen');
         if(!ws) { ws=document.createElement('div'); ws.id='battleWaitScreen'; ws.style.cssText='position:absolute; inset:0; background:rgba(0,0,0,0.85); z-index:100; display:flex; flex-direction:column; justify-content:center; align-items:center; color:white; backdrop-filter:blur(5px);'; document.getElementById('pgQuiz').appendChild(ws); }
         ws.innerHTML = `<i class="fas fa-spinner fa-spin" style="font-size:40px; color:var(--gold); margin-bottom:15px;"></i><h2 style="font-family:Outfit">${customText}</h2>`;
