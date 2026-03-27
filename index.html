@@ -1763,6 +1763,9 @@
     .sound-toggle { position:absolute; top:15px; right:15px; z-index:50; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15); color:var(--text-muted); width:40px; height:40px; border-radius:50%; display:flex; justify-content:center; align-items:center; cursor:pointer; font-size:16px; transition:all 0.2s; }
     .sound-toggle:hover { color:white; background:rgba(255,255,255,0.15); }
     .conn-toast { position:fixed; top:20px; left:50%; transform:translateX(-50%); background:rgba(220,38,38,0.9); color:white; padding:10px 20px; border-radius:25px; font-size:13px; font-weight:600; z-index:9000; display:none; animation:slideDownFade 0.3s ease; }
+    /* ป้ายแจ้งว่าคู่แข่งตอบแล้ว (ไม่บล็อกการกด) */
+    .opp-answer-toast { position:fixed; top:60px; left:50%; transform:translateX(-50%); background:rgba(59,130,246,0.9); color:white; padding:8px 18px; border-radius:20px; font-size:13px; font-weight:700; z-index:8999; display:none; animation:slideDownFade 0.3s ease; font-family:'Kanit',sans-serif; backdrop-filter:blur(8px); pointer-events:none; }
+    .opp-answer-toast.show { display:block; }
   </style>
  </head>
  <body>
@@ -1775,6 +1778,7 @@
   </div>
   
   <div id="connToast" class="conn-toast"><i class="fas fa-wifi"></i> กำลังเชื่อมต่อใหม่...</div>
+  <div id="oppAnswerToast" class="opp-answer-toast"></div>
   <div id="scoreEff" class="pop-score" style="display:none;">+50</div>
 
   <div id="rankInfoModal" class="overlay" style="display:none; z-index: 3000;">
@@ -2504,7 +2508,10 @@
     }
 
     async function ans(v, btn) {
-        if(isAnswering) return; 
+        // Battle mode: เช็ค myAnsweredThisQ (ตอบได้แค่ครั้งเดียวต่อข้อ)
+        // Normal mode: เช็ค isAnswering เดิม
+        if(isBattleMode) { if(myAnsweredThisQ) return; }
+        else { if(isAnswering) return; }
         isAnswering = true; 
         
         const timeTaken = Date.now() - st.qStartTime;
@@ -2513,92 +2520,79 @@
         document.querySelectorAll('.choice-btn').forEach(b=>b.disabled=true);
 
         // ============================================================
-        // 🔧 STEP B: DB-Arbitrated Battle Answer
-        // Battle mode ใช้ submit_battle_answer (เขียน server_timestamp ลง DB)
-        // เพื่อให้ DB เป็นคนตัดสิน "ใครกดก่อน" แทน broadcast race
+        // ⚔️ 1v1 BATTLE — ทั้งคู่ตอบได้ ใครตอบถูกก่อนได้แต้ม
+        // ไม่บล็อก ไม่ snatch — โชว์เลยว่าใครตอบเมื่อไหร่
         // ============================================================
         if(isBattleMode && currentBattleRoomId) {
             const battleRpcPromise = sb.rpc('submit_battle_answer', {
-                p_emp_id:      st.u.employee_id,
-                p_room_id:     currentBattleRoomId,
-                p_q_idx:       battleIndex,
-                p_question_id: st.curQ.id,
-                p_selected:    parseInt(v),
-                p_time_taken:  timeTaken,
-                p_streak:      st.s
+                p_emp_id: st.u.employee_id, p_room_id: currentBattleRoomId,
+                p_q_idx: battleIndex, p_question_id: st.curQ.id,
+                p_selected: parseInt(v), p_time_taken: timeTaken, p_streak: st.s
             });
-            const timeoutPromise = new Promise(r => setTimeout(() => r({ error: { message: 'timeout' } }), 5000));
-            const { data, error } = await Promise.race([battleRpcPromise, timeoutPromise]);
+            const timeoutPromise2 = new Promise(r => setTimeout(() => r({ error: { message: 'timeout' } }), 5000));
+            const { data, error } = await Promise.race([battleRpcPromise, timeoutPromise2]);
 
             if(error || !data) {
-                // fallback: ถ้า DB ตอบไม่ทัน ให้ advance ไปข้อถัดไปเลย (ไม่ค้างจอ)
-                isAnswering = false;
-                battleAdvanceQ(false);
+                myAnsweredThisQ = true;
+                checkBothAnsweredAndAdvance();
                 return;
             }
 
-            // data.winner_id  = emp_id ของคนที่ DB ถือว่ากดก่อน (ถูกต้องเท่านั้น)
-            // data.is_correct = คำตอบของเราถูกไหม
-            // data.points     = total_points (base + speed bonus) from DB
-            // data.rank       = ลำดับที่ตอบถูก (1st, 2nd, 3rd)
-            // data.base_points = rank-based points
-            // data.speed_bonus = speed bonus points
-            // data.already_answered = true ถ้ามีคนตอบไปแล้วก่อนหน้า (ซ้ำ)
-
             const isRight = data.is_correct;
-            const qScore = data.points || 0; // ใช้คะแนนจาก DB โดยตรง (rank + speed bonus)
+            const qScore = data.points || 0;
             const myRank = data.rank || 0;
+            const timeSec = (timeTaken / 1000).toFixed(1);
 
-            if(isRight) {
-                // ✅ ตอบถูก — ได้คะแนน rank-based + speed bonus
-                btn.classList.add('correct');
-                playSound('correct');
-                st.s++;
-                battleMyCorrect++;
-                battleMyGameScore += qScore;
-                battleMyTotalTime += timeTaken;
+            myAnsweredThisQ = true;
+            myAnswerTimeThisQ = timeTaken;
+
+            if(isRight && myRank === 1) {
+                // 🥇 ตอบถูก + เร็วที่สุด = ได้แต้ม!
+                btn.classList.add('correct'); playSound('correct'); st.s++;
+                battleMyCorrect++; battleMyGameScore += qScore; battleMyTotalTime += timeTaken;
                 updateBattleProgress(battleIndex, 'correct');
-
-                // แสดง +score พร้อมลำดับ
+                battleResults[battleIndex] = 'won';
                 const pp = document.getElementById('scoreEff');
-                const rankLabel = myRank === 1 ? '🥇' : myRank === 2 ? '🥈' : '🥉';
-                pp.innerText = rankLabel + " +" + qScore;
-                pp.style.display = 'block';
-                pp.style.animation = 'none';
-                void pp.offsetWidth;
+                pp.innerText = "🥇 +" + qScore; pp.style.display = 'block';
+                pp.style.animation = 'none'; void pp.offsetWidth;
                 pp.style.animation = 'floatUpFade 1.2s forwards';
-
-                // อัปเดต in-game scoreboard
+                setTimeout(() => pp.style.display='none', 1500);
                 const myDisp = document.getElementById('myBattleScoreDisplay');
                 if(myDisp) myDisp.innerText = battleMyGameScore.toLocaleString('th-TH');
 
-                // แจ้งผู้เล่นอื่นพร้อมส่งคะแนน in-game + เวลารวม
-                if(battleChannel) {
-                    battleChannel.send({ type:'broadcast', event:'score_update', payload:{
-                        emp_id: st.u.employee_id,
-                        gameScore: battleMyGameScore,
-                        correct: battleMyCorrect,
-                        totalTime: battleMyTotalTime
-                    }});
-                    // แจ้ง snatched — ให้ผู้เล่นอื่นรู้ว่าเราตอบถูกข้อนี้แล้ว
-                    battleChannel.send({ type:'broadcast', event:'snatched', payload:{
-                        emp_id: st.u.employee_id,
-                        q_idx: battleIndex,
-                        rank: myRank
-                    }});
-                }
-                setTimeout(() => { pp.style.display='none'; battleAdvanceQ(true); }, 1200);
+            } else if(isRight && myRank > 1) {
+                // ✅ ตอบถูก แต่คู่แข่งเร็วกว่า = 0 แต้ม
+                btn.classList.add('correct'); playSound('tick');
+                battleMyTotalTime += timeTaken;
+                updateBattleProgress(battleIndex, 'snatched');
+                battleResults[battleIndex] = 'slow';
+                const pp = document.getElementById('scoreEff');
+                pp.innerText = "ถูก แต่ช้ากว่า"; pp.style.display = 'block';
+                pp.style.animation = 'none'; void pp.offsetWidth;
+                pp.style.animation = 'floatUpFade 1.2s forwards';
+                setTimeout(() => pp.style.display='none', 1500);
 
             } else {
-                // ❌ ตอบผิด — 0 คะแนน in-game ข้อนี้
-                btn.classList.add('incorrect');
-                playSound('wrong');
-                updateBattleProgress(battleIndex, 'wrong');
+                // ❌ ตอบผิด = 0 แต้ม
+                btn.classList.add('incorrect'); playSound('wrong');
                 battleMyTotalTime += timeTaken;
-                isAnswering = false;
+                updateBattleProgress(battleIndex, 'wrong');
+                battleResults[battleIndex] = 'wrong';
             }
-            return; // จบ battle path
+
+            // แจ้งคู่แข่งว่าเราตอบแล้ว (non-blocking)
+            if(battleChannel) {
+                battleChannel.send({ type:'broadcast', event:'score_update', payload:{
+                    emp_id: st.u.employee_id, gameScore: battleMyGameScore,
+                    correct: battleMyCorrect, totalTime: battleMyTotalTime }});
+                battleChannel.send({ type:'broadcast', event:'opponent_answered', payload:{
+                    emp_id: st.u.employee_id, q_idx: battleIndex,
+                    time_sec: timeSec, is_correct: isRight, rank: myRank }});
+            }
+            checkBothAnsweredAndAdvance();
+            return;
         }
+
 
         // ============================================================
         // Normal (non-battle) mode — ใช้ submit_answer เดิม
@@ -3252,40 +3246,21 @@
     let battleMyTotalTime = 0, battleOppTotalTime = 0;
     let battlePlayerCount = 2;
     const BATTLE_Q_COUNT = 10, BATTLE_TIME_PER_Q = 8;
+    // Per-question tracking (1v1 ทั้งคู่ตอบได้ ไม่บล็อกกัน)
+    let myAnsweredThisQ = false, oppAnsweredThisQ = false;
+    let myAnswerTimeThisQ = 0, oppAnswerTimeThisQ = 0;
+    let oppCorrectThisQ = false;
+    let isAdvancingQ = false; // ป้องกัน advance ซ้ำ
 
     // =========================================================================
-    // RANK-BASED SCORING SYSTEM (matches DB logic)
-    // ตอบถูกก่อน = ได้คะแนนเยอะกว่า + Speed Bonus ทำให้ไม่มีทางเสมอ
-    //
-    // 2P: 1st correct=100, 2nd=50, wrong=0
-    // 3P: 1st correct=100, 2nd=60, 3rd=30, wrong=0  
-    // Speed Bonus: +1 to +20 (faster = more)
-    //
-    // Comeback: ห่าง 2-3 ข้อพลิกได้ / ห่าง 6+ ข้อพลิกไม่ได้
+    // 1v1 SCORING: ตอบถูกคนแรกได้แต้ม คนที่สองได้ 0
+    // Speed Bonus ทำให้ไม่มีทางเสมอ
     // =========================================================================
     function calcSpeedBonus(timeTakenMs) {
         const t = timeTakenMs / 1000;
-        if(t < 1) return 20;
-        if(t < 2) return 18;
-        if(t < 3) return 15;
-        if(t < 4) return 12;
-        if(t < 5) return 9;
-        if(t < 6) return 6;
-        if(t < 7) return 3;
-        return 1;
-    }
-
-    function calcRankBasePoints(rank, nPlayers) {
-        if(nPlayers >= 3) {
-            if(rank === 1) return 100;
-            if(rank === 2) return 60;
-            if(rank === 3) return 30;
-            return 0;
-        } else {
-            if(rank === 1) return 100;
-            if(rank === 2) return 50;
-            return 0;
-        }
+        if(t < 1) return 20; if(t < 2) return 18; if(t < 3) return 15;
+        if(t < 4) return 12; if(t < 5) return 9; if(t < 6) return 6;
+        if(t < 7) return 3; return 1;
     }
 
     function clearBattleTimers() { if(queueTimer) clearInterval(queueTimer); if(triviaTimer) clearInterval(triviaTimer); }
@@ -3424,27 +3399,39 @@
                 })
                 .on('broadcast', { event: 'opponent_left' }, payload => {
                     if(battleHeartbeatInterval) clearInterval(battleHeartbeatInterval);
-                    showAlert('คู่ต่อสู้ออกจากเกมไปแล้ว! คุณคือผู้ชนะ', 'ชนะผ่าน!', 'fa-trophy', 'var(--agri-green)', () => showBattleResult(true, true));
+                    // 50% rule: เล่นมา ≥5 ข้อ = 2,000 / ≥3 ข้อ = 500 / <3 ข้อ = 0
+                    let dcReward = 0;
+                    if(battleIndex >= 5) dcReward = 2000;
+                    else if(battleIndex >= 3) dcReward = 500;
+                    const dcMsg = dcReward > 0 
+                        ? 'คู่แข่งออกไป! คุณได้รับ +' + dcReward + ' pt'
+                        : 'คู่แข่งออกไป เล่นยังไม่ถึง 3 ข้อจึงไม่ได้รับแต้ม';
+                    showAlert(dcMsg, 'ชนะผ่าน!', 'fa-trophy', 'var(--agri-green)', () => showBattleResult(true, true, dcReward));
                 })
                 .on('broadcast', { event: 'sync_q_set' }, payload => {
                     battleQuestions = payload.payload.q_ids.map(id => st.q.find(q => q.id === id)).filter(Boolean);
                     battleShuffleSeeds = payload.payload.seeds;
                     if(battleQuestions.length > 0) { oppReady = true; checkBothReady(); }
                 })
-                .on('broadcast', { event: 'snatched' }, payload => {
-                    if(payload.payload.emp_id !== st.u.employee_id) {
-                        // รับ snatched จากผู้เล่นอื่น — ถ้าเรายัง isAnswering=false (ยังไม่ได้กด)
-                        if(!isAnswering) {
-                            playSound('snatch'); clearInterval(quizInterval); isAnswering = true;
-                            document.querySelectorAll('.choice-btn').forEach(b => b.disabled = true);
-                            updateBattleProgress(payload.payload.q_idx, 'snatched');
-                            battleResults[payload.payload.q_idx] = 'snatched';
-                            const sn = document.getElementById('snatchOverlay'); 
-                            const rankEmoji = payload.payload.rank === 1 ? '🥇' : payload.payload.rank === 2 ? '🥈' : '🥉';
-                            if(sn) { sn.querySelector('.snatch-stamp').innerText = rankEmoji + ' คู่แข่งตอบก่อน!'; sn.classList.add('active'); }
-                            setTimeout(() => { if(sn) sn.classList.remove('active'); isAnswering = false; battleAdvanceQ(false); }, 1800);
+                .on('broadcast', { event: 'opponent_answered' }, payload => {
+                    // ⚡ คู่แข่งตอบแล้ว — โชว์เวลา แต่ไม่บล็อกปุ่ม
+                    if(payload.payload.emp_id !== st.u.employee_id && payload.payload.q_idx === battleIndex) {
+                        oppAnsweredThisQ = true;
+                        oppAnswerTimeThisQ = parseFloat(payload.payload.time_sec || 0) * 1000;
+                        oppCorrectThisQ = payload.payload.is_correct;
+                        // โชว์ toast ว่าคู่แข่งตอบแล้ว (ไม่บล็อก)
+                        const toast = document.getElementById('oppAnswerToast');
+                        if(toast) {
+                            const icon = payload.payload.is_correct ? '✅' : '❌';
+                            toast.innerText = icon + ' คู่แข่งตอบแล้ว (' + payload.payload.time_sec + ' วิ)';
+                            toast.classList.add('show');
+                            setTimeout(() => toast.classList.remove('show'), 3000);
                         }
+                        checkBothAnsweredAndAdvance();
                     }
+                })
+                .on('broadcast', { event: 'snatched' }, payload => {
+                    // Legacy compatibility — เปลี่ยนมาใช้ opponent_answered แทน
                 })
                 .on('broadcast', { event: 'player_ready' }, payload => {
                     // 🔧 FIX A4: เช็ค q_idx ก่อน เพื่อป้องกัน ready ข้อเก่าปลุก checkBothReady ข้อใหม่
@@ -3490,7 +3477,11 @@
         battleHeartbeatInterval = setInterval(() => {
             if(battleChannel) try{battleChannel.send({type:'broadcast',event:'heartbeat',payload:{emp_id:st.u.employee_id}});}catch(e){}
             if(Date.now()-lastOppHeartbeat > 10000 && isBattleMode && battleIndex < BATTLE_Q_COUNT) {
-                showAlert('คู่ต่อสู้หลุดการเชื่อมต่อ! คุณคือผู้ชนะ','หลุดการเชื่อมต่อ','fa-wifi','var(--agri-green)',()=>showBattleResult(true,true));
+                // 50% rule: เล่นมา ≥5 ข้อ = 2,000 / ≥3 ข้อ = 500
+                let dcReward = 0;
+                if(battleIndex >= 5) dcReward = 2000;
+                else if(battleIndex >= 3) dcReward = 500;
+                showAlert('คู่ต่อสู้หลุดการเชื่อมต่อ!','หลุดการเชื่อมต่อ','fa-wifi','var(--agri-green)',()=>showBattleResult(true,true,dcReward));
                 clearInterval(battleHeartbeatInterval);
             }
         }, 3000);
@@ -3548,12 +3539,11 @@
 
             clearInterval(quizInterval);
             quizInterval = setInterval(() => {
-                if(isAnswering) return;
                 timeLeft -= 0.1;
                 tBar.style.width = (timeLeft/BATTLE_TIME_PER_Q)*100+'%';
                 countBox.innerText = Math.max(0,timeLeft).toFixed(1);
                 if(timeLeft <= 3.0) { tBar.style.background='linear-gradient(90deg, var(--mc-red), var(--mc-red-light))'; panic.classList.add('active'); countBox.classList.add('urgent'); if(Math.floor(timeLeft*10)%10===0) playSound('tick'); }
-                if(timeLeft <= 0) { clearInterval(quizInterval); isAnswering=false; updateBattleProgress(battleIndex,'wrong'); battleAdvanceQ(false); }
+                if(timeLeft <= 0) { clearInterval(quizInterval); if(!myAnsweredThisQ){ myAnsweredThisQ=true; updateBattleProgress(battleIndex,'wrong'); battleResults[battleIndex]='timeout'; } battleAdvanceQ(false); }
             }, 100);
         }, 800);
     }
@@ -3565,7 +3555,11 @@
         if(forceStartTimeout) clearTimeout(forceStartTimeout);
         
         isAnswering = true; // ล็อคปุ่มเอาไว้ก่อนจนกว่าจะซิงค์กันเสร็จ
-        myUiLoaded = false; oppUiLoaded = false; 
+        myUiLoaded = false; oppUiLoaded = false;
+        // Reset per-question tracking
+        myAnsweredThisQ = false; oppAnsweredThisQ = false;
+        myAnswerTimeThisQ = 0; oppAnswerTimeThisQ = 0;
+        oppCorrectThisQ = false; isAdvancingQ = false;
 
         const ws = document.getElementById('battleWaitScreen'); if(ws) ws.style.display='none';
         const sn = document.getElementById('snatchOverlay'); if(sn) sn.classList.remove('active');
@@ -3608,11 +3602,19 @@
     }
 
     function battleAdvanceQ(wasCorrect) {
+        if(isAdvancingQ) return;
+        isAdvancingQ = true;
         if(!wasCorrect && !battleResults[battleIndex]) battleResults[battleIndex]='miss';
-        else if(wasCorrect) battleResults[battleIndex]='correct';
+        clearInterval(quizInterval);
         battleIndex++;
         if(battleIndex >= BATTLE_Q_COUNT) { finishBattle(); return; }
         showBattleWait("รอคู่แข่ง...");
+    }
+
+    function checkBothAnsweredAndAdvance() {
+        if(myAnsweredThisQ && oppAnsweredThisQ && !isAdvancingQ) {
+            setTimeout(() => battleAdvanceQ(false), 800);
+        }
     }
 
     async function finishBattle() {
@@ -3622,17 +3624,12 @@
         if(forceStartTimeout) clearTimeout(forceStartTimeout);
         if(battleChannel) battleChannel.send({type:'broadcast',event:'battle_end_scores',payload:{emp_id:st.u.employee_id,correct:battleMyCorrect,gameScore:battleMyGameScore,totalTime:battleMyTotalTime}});
         
-        // รอ 2 วิ ให้คะแนนอีกฝ่ายมาถึง แล้วใช้ DB ตัดสินผล
         setTimeout(async () => {
             try {
-                // ใช้ DB เป็นผู้ตัดสินสุดท้าย (server-validated)
                 const { data: dbResult } = await sb.rpc('finalize_battle', { p_room_id: currentBattleRoomId });
                 if(dbResult && dbResult.players && dbResult.players.length > 0) {
-                    // DB sort ผู้เล่นตาม score DESC, time ASC แล้ว
                     const winnerId = dbResult.players[0].emp_id;
                     const isWin = (winnerId === String(st.u.employee_id));
-                    
-                    // อัปเดตคะแนนคู่แข่งจาก DB (ถูกต้องที่สุด)
                     for(const p of dbResult.players) {
                         if(p.emp_id !== String(st.u.employee_id)) {
                             battleOppGameScore = p.score || 0;
@@ -3640,24 +3637,19 @@
                             battleOppTotalTime = p.total_time || 0;
                         }
                     }
-                    showBattleResult(isWin, false);
+                    showBattleResult(isWin, false, isWin ? 2000 : 0);
                 } else {
-                    // Fallback: ใช้คะแนน client-side ถ้า DB ไม่ตอบ
-                    const isWin = battleMyGameScore > battleOppGameScore || 
-                        (battleMyGameScore === battleOppGameScore && battleMyTotalTime < battleOppTotalTime) ||
-                        (battleMyGameScore === battleOppGameScore && battleMyTotalTime === battleOppTotalTime && isBattleHost);
-                    showBattleResult(isWin, false);
+                    const isWin = battleMyGameScore > battleOppGameScore;
+                    showBattleResult(isWin, false, isWin ? 2000 : 0);
                 }
             } catch(e) {
-                console.warn('finalize_battle failed, using client scores', e);
-                const isWin = battleMyGameScore > battleOppGameScore || 
-                    (battleMyGameScore === battleOppGameScore && battleMyTotalTime < battleOppTotalTime);
-                showBattleResult(isWin, false);
+                const isWin = battleMyGameScore > battleOppGameScore;
+                showBattleResult(isWin, false, isWin ? 2000 : 0);
             }
         }, 2500);
     }
 
-    async function showBattleResult(isWin, isTechWin) {
+    async function showBattleResult(isWin, isTechWin, dcOverrideReward) {
         isTechWin = isTechWin || false;
         isBattleMode = false; clearInterval(quizInterval);
         const ws = document.getElementById('battleWaitScreen'); if(ws) ws.style.display='none';
@@ -3667,19 +3659,21 @@
 
         const crown=document.getElementById('resultCrown'), title=document.getElementById('resultTitle'), subtitle=document.getElementById('resultSubtitle');
         if(isTechWin) {
-            crown.innerText='🏆'; title.innerText='ชนะ Technical Win!'; title.style.color='var(--agri-green)';
-            subtitle.innerText='คู่แข่งออกจากเกมไป คุณได้รับชัยชนะอัตโนมัติ';
+            crown.innerText='\u{1F3C6}'; title.innerText='ชนะ Technical Win!'; title.style.color='var(--agri-green)';
+            const rewardAmt = dcOverrideReward || 0;
+            subtitle.innerText = rewardAmt > 0 
+                ? 'คู่แข่งออกไป คุณได้รับ +' + rewardAmt.toLocaleString('th-TH') + ' pt'
+                : 'คู่แข่งออกไปก่อนเกมจะเริ่ม ไม่ได้รับแต้ม';
         } else if(isWin) {
-            crown.innerText='👑'; title.innerText='ชัยชนะ!'; title.style.color='var(--gold)';
+            crown.innerText='\u{1F451}'; title.innerText='ชัยชนะ!'; title.style.color='var(--gold)';
             subtitle.innerText = 'คุณเอาชนะด้วยคะแนน ' + battleMyGameScore + ' ต่อ ' + battleOppGameScore + ' (ถูก ' + battleMyCorrect + '/' + BATTLE_Q_COUNT + ' ข้อ)';
         } else {
-            crown.innerText='💀'; title.innerText='พ่ายแพ้'; title.style.color='var(--mc-red-light)';
+            crown.innerText='\u{1F480}'; title.innerText='พ่ายแพ้'; title.style.color='var(--mc-red-light)';
             subtitle.innerText = 'คู่แข่งชนะด้วยคะแนน ' + battleOppGameScore + ' ต่อ ' + battleMyGameScore + ' (ถูก ' + battleOppCorrect + '/' + BATTLE_Q_COUNT + ' ข้อ)';
         }
 
         document.getElementById('resultMyName').innerText = battleMyInfo?.name||'ฉัน';
         document.getElementById('resultMySite').innerText = battleMyInfo?.site||'';
-        // แสดงคะแนน in-game (ไม่ใช่จำนวนข้อถูก)
         document.getElementById('resultMyScore').innerText = battleMyGameScore.toLocaleString('th-TH');
         document.getElementById('resultMyScore').style.color = isWin?'var(--agri-green)':'var(--mc-red-light)';
         document.getElementById('resultOppName').innerText = battleOppInfo?.name||'คู่แข่ง';
@@ -3688,17 +3682,14 @@
         document.getElementById('resultMyCard').classList.toggle('winner', isWin||isTechWin);
         document.getElementById('resultOppCard').classList.toggle('winner', !isWin&&!isTechWin);
 
-        // มอบรางวัล Personal Point 500 + Site Point 100 ให้ผู้ชนะ
-        if(isWin || isTechWin) {
-            battlePointsEarned = 500;
-            document.getElementById('resultEarnedPts').innerText = '+500 pt + Site +100';
-            // บวก Personal Point ลง leaderboard จริง
+        const reward = (typeof dcOverrideReward === 'number') ? dcOverrideReward : 0;
+        if((isWin || isTechWin) && reward > 0) {
+            battlePointsEarned = reward;
+            document.getElementById('resultEarnedPts').innerText = '+' + reward.toLocaleString('th-TH') + ' pt';
             try {
                 await sb.rpc('award_battle_winner', {
-                    p_emp_id: st.u.employee_id,
-                    p_room_id: currentBattleRoomId,
-                    p_personal_pts: 500,
-                    p_site_pts: 100
+                    p_emp_id: st.u.employee_id, p_room_id: currentBattleRoomId,
+                    p_personal_pts: reward, p_site_pts: 0
                 });
             } catch(e) { console.warn('award_battle_winner failed', e); }
         } else {
