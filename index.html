@@ -1731,6 +1731,34 @@
         40%, 60% { transform: translate3d(10px, 0, 0); }
     }
 
+
+    /* --- BATTLE RESULT BREAKDOWN --- */
+    .result-breakdown { width:100%; max-width:450px; margin-bottom:20px; }
+    .rb-title { font-size:14px; color:var(--text-muted); text-transform:uppercase; letter-spacing:2px; margin-bottom:12px; text-align:center; font-weight:700; }
+    .rb-grid { display:grid; grid-template-columns:repeat(10, 1fr); gap:4px; margin-bottom:8px; }
+    .rb-cell { aspect-ratio:1; border-radius:8px; display:flex; flex-direction:column; align-items:center; justify-content:center; font-size:9px; font-weight:800; font-family:'Outfit'; border:1px solid rgba(255,255,255,0.1); position:relative; }
+    .rb-cell .rb-q { font-size:8px; color:var(--text-dim); margin-bottom:1px; }
+    .rb-cell .rb-pts { font-size:11px; }
+    .rb-cell.won { background:rgba(16,185,129,0.25); border-color:var(--agri-green); color:var(--agri-green-light); }
+    .rb-cell.lost { background:rgba(220,38,38,0.15); border-color:rgba(220,38,38,0.3); color:var(--mc-red-light); }
+    .rb-cell.draw { background:rgba(251,191,36,0.1); border-color:rgba(251,191,36,0.3); color:var(--gold); }
+    .rb-cell.empty { background:rgba(255,255,255,0.03); color:var(--text-dim); }
+    .rb-legend { display:flex; gap:12px; justify-content:center; font-size:11px; color:var(--text-muted); }
+    .rb-legend span { display:flex; align-items:center; gap:4px; }
+    .rb-legend .dot { width:8px; height:8px; border-radius:50%; }
+    /* Battle live scoreboard */
+    .battle-live-bar { display:flex; align-items:center; background:rgba(0,0,0,0.85); padding:10px 16px; border-bottom:1px solid rgba(255,255,255,0.08); gap:8px; }
+    .blb-player { display:flex; align-items:center; gap:6px; font-family:'Outfit'; font-weight:800; font-size:16px; flex:1; }
+    .blb-player.me { color:#60A5FA; }
+    .blb-player.opp { color:#F87171; justify-content:flex-end; }
+    .blb-avatar { width:24px; height:24px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:900; }
+    .blb-score-bar { flex:2; height:24px; border-radius:12px; background:rgba(255,255,255,0.06); overflow:hidden; display:flex; position:relative; }
+    .blb-fill-me { height:100%; background:linear-gradient(90deg, #3B82F6, #60A5FA); transition:width 0.4s ease; border-radius:12px 0 0 12px; }
+    .blb-fill-opp { height:100%; background:linear-gradient(90deg, #F87171, #DC2626); transition:width 0.4s ease; border-radius:0 12px 12px 0; margin-left:auto; }
+    .blb-vs { position:absolute; left:50%; transform:translateX(-50%); font-size:10px; font-weight:900; color:white; line-height:24px; text-shadow:0 1px 3px rgba(0,0,0,0.8); }
+    /* Opponent answered toast */
+    .opp-answer-toast { position:fixed; top:60px; left:50%; transform:translateX(-50%); background:rgba(30,64,175,0.95); color:white; padding:8px 18px; border-radius:20px; font-size:13px; font-weight:700; z-index:8999; display:none; animation:slideDownFade 0.3s ease; font-family:'Kanit',sans-serif; backdrop-filter:blur(8px); pointer-events:none; }
+    .opp-answer-toast.show { display:block; }
     /* --- BATTLE RESULT SCREEN --- */
     .result-wrap { height:100%; display:flex; flex-direction:column; justify-content:center; align-items:center; background:radial-gradient(circle at center, rgba(251,191,36,0.1) 0%, var(--bg-dark) 70%); padding:20px; text-align:center; position:relative; overflow:hidden; }
     .result-crown { font-size:60px; margin-bottom:15px; animation:float 2s infinite ease-in-out; }
@@ -2034,10 +2062,10 @@
 
           <div class="timer-wrap"><div id="tBar" class="timer-bar"></div></div>
           <div id="battleProgressUI" class="battle-progress" style="display:none;"></div>
-          <div id="battleScoreBoardUI" style="display: none; background: rgba(0,0,0,0.8); padding: 12px 20px; border-bottom: 1px solid rgba(255,255,255,0.1); justify-content: space-between; align-items: center; font-family: 'Outfit'; font-weight: 800; font-size: 18px;">
-              <div style="color: #60A5FA;"><i class="fas fa-user"></i> <span id="myBattleScoreDisplay">0</span></div>
-              <div style="color: var(--text-dim); font-size: 12px; font-weight: 600;">🥇100 🥈50 + ⚡Bonus</div>
-              <div style="color: #F87171;"><span id="oppBattleScoreDisplay">0</span> <i class="fas fa-crosshairs"></i></div>
+          <div id="battleScoreBoardUI" class="battle-live-bar" style="display:none;">
+              <div class="blb-player me"><div class="blb-avatar" style="background:rgba(59,130,246,0.3); border:1px solid #60A5FA;" id="blbMyAvatar">M</div><span id="myBattleScoreDisplay">0</span></div>
+              <div class="blb-score-bar"><div class="blb-fill-me" id="blbFillMe" style="width:50%;"></div><div class="blb-vs">VS</div><div class="blb-fill-opp" id="blbFillOpp" style="width:50%;"></div></div>
+              <div class="blb-player opp"><span id="oppBattleScoreDisplay">0</span><div class="blb-avatar" style="background:rgba(220,38,38,0.3); border:1px solid #F87171;" id="blbOppAvatar">O</div></div>
           </div>
           <div class="quiz-head">
               <div class="quiz-exit" onclick="exitQuiz()"><i class="fas fa-times"></i></div>
@@ -2129,9 +2157,20 @@
                 <div class="rp-label">คะแนนรวม</div>
             </div>
         </div>
+        <!-- Per-question breakdown -->
+        <div class="result-breakdown" id="resultBreakdown">
+            <div class="rb-title">📊 สรุปแต่ละข้อ</div>
+            <div class="rb-grid" id="rbMyGrid"></div>
+            <div class="rb-grid" id="rbOppGrid"></div>
+            <div class="rb-legend">
+                <span><div class="dot" style="background:var(--agri-green);"></div> ชนะ</span>
+                <span><div class="dot" style="background:var(--mc-red);"></div> แพ้/ผิด</span>
+                <span><div class="dot" style="background:var(--gold);"></div> ทั้งคู่ไม่ได้แต้ม</span>
+            </div>
+        </div>
         <div class="result-rewards" id="resultRewards">
             <div class="rw-row" style="justify-content: center; gap: 10px;">
-                <span class="rw-label" style="font-size: 16px;">คะแนนที่ได้รับจากการดวล:</span>
+                <span class="rw-label" style="font-size: 16px;">รางวัลจากการดวล:</span>
                 <span class="rw-val" id="resultEarnedPts" style="color:var(--gold); font-size: 20px;">+0</span>
             </div>
         </div>
@@ -2515,7 +2554,8 @@
         isAnswering = true; 
         
         const timeTaken = Date.now() - st.qStartTime;
-        clearInterval(quizInterval);
+        // Battle mode: ไม่หยุด timer — ปล่อยให้นับต่อจนหมดเวลา/ทั้งคู่ตอบ
+        if(!isBattleMode) clearInterval(quizInterval);
         document.getElementById('panicOverlay').classList.remove('active');
         document.querySelectorAll('.choice-btn').forEach(b=>b.disabled=true);
 
@@ -2552,6 +2592,7 @@
                 battleMyCorrect++; battleMyGameScore += qScore; battleMyTotalTime += timeTaken;
                 updateBattleProgress(battleIndex, 'correct');
                 battleResults[battleIndex] = 'won';
+                battleQHistory[battleIndex] = { myScore:qScore, oppScore:0, myTime:timeTaken, oppTime:0, myCorrect:true, oppCorrect:false, winner:'me' };
                 const pp = document.getElementById('scoreEff');
                 pp.innerText = "🥇 +" + qScore; pp.style.display = 'block';
                 pp.style.animation = 'none'; void pp.offsetWidth;
@@ -2559,6 +2600,7 @@
                 setTimeout(() => pp.style.display='none', 1500);
                 const myDisp = document.getElementById('myBattleScoreDisplay');
                 if(myDisp) myDisp.innerText = battleMyGameScore.toLocaleString('th-TH');
+                updateLiveScoreBar();
 
             } else if(isRight && myRank > 1) {
                 // ✅ ตอบถูก แต่คู่แข่งเร็วกว่า = 0 แต้ม
@@ -2566,6 +2608,7 @@
                 battleMyTotalTime += timeTaken;
                 updateBattleProgress(battleIndex, 'snatched');
                 battleResults[battleIndex] = 'slow';
+                battleQHistory[battleIndex] = { myScore:0, oppScore:0, myTime:timeTaken, oppTime:0, myCorrect:true, oppCorrect:true, winner:'opp' };
                 const pp = document.getElementById('scoreEff');
                 pp.innerText = "ถูก แต่ช้ากว่า"; pp.style.display = 'block';
                 pp.style.animation = 'none'; void pp.offsetWidth;
@@ -2578,6 +2621,7 @@
                 battleMyTotalTime += timeTaken;
                 updateBattleProgress(battleIndex, 'wrong');
                 battleResults[battleIndex] = 'wrong';
+                battleQHistory[battleIndex] = Object.assign(battleQHistory[battleIndex]||{}, { myScore:0, myTime:timeTaken, myCorrect:false });
             }
 
             // แจ้งคู่แข่งว่าเราตอบแล้ว (non-blocking)
@@ -3251,6 +3295,7 @@
     let myAnswerTimeThisQ = 0, oppAnswerTimeThisQ = 0;
     let oppCorrectThisQ = false;
     let isAdvancingQ = false; // ป้องกัน advance ซ้ำ
+    let battleQHistory = []; // ผลแต่ละข้อ [{myScore, oppScore, myTime, oppTime, winner}]
 
     // =========================================================================
     // 1v1 SCORING: ตอบถูกคนแรกได้แต้ม คนที่สองได้ 0
@@ -3362,6 +3407,7 @@
         battleResults = []; battleQuestions = []; battleShuffleSeeds = [];
         rematchRequested = false; rematchOppRequested = false;
         battleMyGameScore = 0; battleOppGameScore = 0;
+        battleQHistory = [];
         battleMyTotalTime = 0; battleOppTotalTime = 0;
         
         myUiLoaded = false; oppUiLoaded = false; 
@@ -3370,6 +3416,8 @@
         document.getElementById('ingameScore').innerText = (st.myPts||0).toLocaleString('th-TH');
         const bBoard = document.getElementById('battleScoreBoardUI');
         if(bBoard) { bBoard.style.display='flex'; document.getElementById('myBattleScoreDisplay').innerText='0'; document.getElementById('oppBattleScoreDisplay').innerText='0'; }
+            const myAv=document.getElementById('blbMyAvatar'); if(myAv) myAv.innerText=(battleMyInfo?.name||'M').charAt(0);
+            const opAv=document.getElementById('blbOppAvatar'); if(opAv) opAv.innerText=(battleOppInfo?.name||'O').charAt(0);
         initBattleProgress();
         if(battleChannel) { await sb.removeChannel(battleChannel); battleChannel = null; }
 
@@ -3383,8 +3431,8 @@
                     }
                 })
                 .on('broadcast', { event: 'start_question' }, payload => {
-                    // 🔥 รับสัญญาณจาก Host ให้เริ่มเล่นพร้อมกัน
-                    executeGoSequence();
+                    // รับสัญญาณจาก Host → เริ่มจับเวลาพร้อมกัน
+                    startQuestionTimer();
                 })
                 .on('broadcast', { event: 'score_update' }, payload => {
                     if(payload.payload.emp_id !== st.u.employee_id) {
@@ -3392,6 +3440,7 @@
                             battleOppGameScore = payload.payload.gameScore;
                             const osd = document.getElementById('oppBattleScoreDisplay');
                             if(osd) osd.innerText = battleOppGameScore.toLocaleString('th-TH');
+                            updateLiveScoreBar();
                         }
                         if(payload.payload.correct !== undefined) battleOppCorrect = payload.payload.correct;
                         if(payload.payload.totalTime !== undefined) battleOppTotalTime = payload.payload.totalTime;
@@ -3417,6 +3466,12 @@
                     // ⚡ คู่แข่งตอบแล้ว — โชว์เวลา แต่ไม่บล็อกปุ่ม
                     if(payload.payload.emp_id !== st.u.employee_id && payload.payload.q_idx === battleIndex) {
                         oppAnsweredThisQ = true;
+                        // Track opponent data
+                        if(battleQHistory[payload.payload.q_idx]) {
+                            battleQHistory[payload.payload.q_idx].oppTime = parseFloat(payload.payload.time_sec||0)*1000;
+                            battleQHistory[payload.payload.q_idx].oppCorrect = payload.payload.is_correct;
+                            if(payload.payload.is_correct && payload.payload.rank === 1) { battleQHistory[payload.payload.q_idx].winner = 'opp'; battleQHistory[payload.payload.q_idx].oppScore = 100 + calcSpeedBonus(parseFloat(payload.payload.time_sec||8)*1000); }
+                        }
                         oppAnswerTimeThisQ = parseFloat(payload.payload.time_sec || 0) * 1000;
                         oppCorrectThisQ = payload.payload.is_correct;
                         // โชว์ toast ว่าคู่แข่งตอบแล้ว (ไม่บล็อก)
@@ -3503,63 +3558,61 @@
     }
 
     // --- ฟังก์ชันเช็คว่าโหลดหน้า UI เสร็จทั้ง 2 ฝ่ายรึยัง ---
+    // --- เริ่มข้อถัดไปทันที ไม่มี Ready/Go overlay ---
     function checkUiReady() {
-        // ให้ Host เป็นคนตัดสินใจสั่งเริ่ม
-        if (isBattleHost && myUiLoaded && oppUiLoaded) {
-            myUiLoaded = false;
-            oppUiLoaded = false;
-            
-            // ส่งสัญญาณไปบอก Client ว่าเริ่มได้
-            if (battleChannel) {
-                battleChannel.send({ type: 'broadcast', event: 'start_question', payload: {} });
-            }
-            // Host เองก็รันคำสั่งเริ่มด้วย
-            executeGoSequence(); 
+        // ทั้งคู่โหลด UI เสร็จ → Host สั่งเริ่มจับเวลา
+        if(isBattleHost && myUiLoaded && oppUiLoaded) {
+            myUiLoaded = false; oppUiLoaded = false;
+            if(battleChannel) battleChannel.send({type:'broadcast',event:'start_question',payload:{ts:Date.now()}});
+            startQuestionTimer();
         }
     }
 
-    // --- ฟังก์ชันกระชากป้าย Ready ออก แล้วเริ่มจับเวลา ---
-    function executeGoSequence() {
-        const overlay = document.getElementById('readyOverlay');
-        if (!isAnswering || !overlay) return; // ป้องกันการรันซ้ำซ้อน
+    // --- เริ่มจับเวลาข้อปัจจุบัน (ทั้งคู่เรียกฟังก์ชันนี้พร้อมกัน) ---
+    function startQuestionTimer() {
         if(forceStartTimeout) clearTimeout(forceStartTimeout);
+        isAnswering = false; // ปลดล็อคให้กดตอบได้
+        st.qStartTime = Date.now();
+        
+        const tBar=document.getElementById('tBar'), panic=document.getElementById('panicOverlay'), countBox=document.getElementById('bigCountdown');
+        let timeLeft = BATTLE_TIME_PER_Q;
 
-        overlay.innerText = "Go!";
-        overlay.style.animation = "pulse 0.3s forwards";
-        playSound('tick');
-
-        // หน่วงเวลาให้เห็นคำว่า Go! แป๊บเดียว แล้วลุยเลย
-        setTimeout(() => {
-            overlay.style.display = 'none';
-            isAnswering = false; // ปลดล็อคให้กดตอบได้
-            st.qStartTime = Date.now(); // เริ่มจับเวลาตั้งแต่วินาทีที่เปิดให้กด
-
-            const tBar=document.getElementById('tBar'), panic=document.getElementById('panicOverlay'), countBox=document.getElementById('bigCountdown');
-            let timeLeft = BATTLE_TIME_PER_Q;
-
-            clearInterval(quizInterval);
-            quizInterval = setInterval(() => {
-                timeLeft -= 0.1;
-                tBar.style.width = (timeLeft/BATTLE_TIME_PER_Q)*100+'%';
-                countBox.innerText = Math.max(0,timeLeft).toFixed(1);
-                if(timeLeft <= 3.0) { tBar.style.background='linear-gradient(90deg, var(--mc-red), var(--mc-red-light))'; panic.classList.add('active'); countBox.classList.add('urgent'); if(Math.floor(timeLeft*10)%10===0) playSound('tick'); }
-                if(timeLeft <= 0) { clearInterval(quizInterval); if(!myAnsweredThisQ){ myAnsweredThisQ=true; updateBattleProgress(battleIndex,'wrong'); battleResults[battleIndex]='timeout'; } battleAdvanceQ(false); }
-            }, 100);
-        }, 800);
+        clearInterval(quizInterval);
+        quizInterval = setInterval(() => {
+            timeLeft -= 0.1;
+            tBar.style.width = (timeLeft/BATTLE_TIME_PER_Q)*100+'%';
+            countBox.innerText = Math.max(0,timeLeft).toFixed(1);
+            if(timeLeft <= 3.0) { tBar.style.background='linear-gradient(90deg, var(--mc-red), var(--mc-red-light))'; panic.classList.add('active'); countBox.classList.add('urgent'); if(Math.floor(timeLeft*10)%10===0) playSound('tick'); }
+            if(timeLeft <= 0) { 
+                clearInterval(quizInterval); 
+                if(!myAnsweredThisQ) { 
+                    myAnsweredThisQ = true; 
+                    updateBattleProgress(battleIndex,'wrong'); 
+                    battleResults[battleIndex] = 'timeout';
+                    // บันทึกข้อนี้ไม่ตอบ
+                    battleQHistory[battleIndex] = battleQHistory[battleIndex] || {};
+                    battleQHistory[battleIndex].myScore = 0;
+                    battleQHistory[battleIndex].myTime = 8000;
+                    battleQHistory[battleIndex].myCorrect = false;
+                } 
+                battleAdvanceQ(false); 
+            }
+        }, 100);
     }
 
-    // --- โหลดคำถาม Battle (ปรับให้รอเพื่อนก่อนค่อยเริ่มจับเวลา) ---
+    // --- โหลดคำถาม Battle (ไม่มี Ready overlay) ---
     function battleLoadQ() {
         if(battleIndex >= BATTLE_Q_COUNT || battleIndex >= battleQuestions.length) { finishBattle(); return; }
         if(readyInterval) clearInterval(readyInterval);
         if(forceStartTimeout) clearTimeout(forceStartTimeout);
         
-        isAnswering = true; // ล็อคปุ่มเอาไว้ก่อนจนกว่าจะซิงค์กันเสร็จ
+        isAnswering = true; // ล็อคไว้จนกว่าจะ sync เสร็จ
         myUiLoaded = false; oppUiLoaded = false;
-        // Reset per-question tracking
         myAnsweredThisQ = false; oppAnsweredThisQ = false;
         myAnswerTimeThisQ = 0; oppAnswerTimeThisQ = 0;
         oppCorrectThisQ = false; isAdvancingQ = false;
+        // เตรียม history slot
+        battleQHistory[battleIndex] = { myScore:0, oppScore:0, myTime:0, oppTime:0, myCorrect:false, oppCorrect:false, winner:'none' };
 
         const ws = document.getElementById('battleWaitScreen'); if(ws) ws.style.display='none';
         const sn = document.getElementById('snatchOverlay'); if(sn) sn.classList.remove('active');
@@ -3573,9 +3626,8 @@
         const seed = battleShuffleSeeds[battleIndex] || (battleIndex+1)*12345;
         const choiceOrder = seededShuffle([1,2,3,4], seed);
         
-        // เรนเดอร์ UI คำถาม และแปะป้าย Ready ค้างไว้
+        // แสดงคำถามทันที (ไม่มี Ready overlay!)
         document.getElementById('qArea').innerHTML = `
-            <div id="readyOverlay" style="position:absolute; inset:0; background:rgba(0,0,0,0.85); z-index:20000; display:flex; justify-content:center; align-items:center; font-size:60px; font-weight:900; color:var(--gold); border-radius:20px; text-shadow: 0 0 30px rgba(251,191,36,0.6); animation: pulseGold 1s infinite;">Ready...</div>
             <div style="text-align:center; animation: slideUpFade 0.4s ease;">
                 <div style="font-size:13px; color:var(--text-muted); margin-bottom:8px; letter-spacing:2px;">ข้อ ${battleIndex+1} / ${BATTLE_Q_COUNT}</div>
                 <div class="q-txt">${st.curQ.question}</div>
@@ -3584,21 +3636,15 @@
                 ${choiceOrder.map((i, idx) => `<button class="choice-btn" style="animation: slideUpFade 0.4s ease ${idx*0.1}s backwards;" onclick="ans('${i}',this)">${st.curQ['option_'+i]}</button>`).join('')}
             </div>`;
 
-        // ส่งสัญญาณบอกเพื่อนว่าโหลด UI เสร็จแล้วนะ
+        // แจ้ง UI loaded
         myUiLoaded = true;
-        if (battleChannel) {
-            battleChannel.send({ type: 'broadcast', event: 'ui_loaded', payload: { emp_id: st.u.employee_id } });
-        }
-
-        // ลองเช็คดูว่าอีกฝั่งบังเอิญส่งมาหาเราตอนกำลังเรนเดอร์ไหม
+        if(battleChannel) battleChannel.send({type:'broadcast',event:'ui_loaded',payload:{emp_id:st.u.employee_id}});
         checkUiReady();
 
-        // ใส่ Timeout เผื่ออีกฝั่งเน็ตตัดหรือส่งกลับมาไม่ได้ ภายใน 5 วิ จะบังคับเริ่ม (ไม่ให้จอกดค้าง)
+        // Force start ถ้าอีกฝ่ายไม่ตอบใน 3 วิ
         forceStartTimeout = setTimeout(() => {
-            if (isAnswering && document.getElementById('readyOverlay')) {
-                executeGoSequence();
-            }
-        }, 5000);
+            if(isAnswering) startQuestionTimer();
+        }, 3000);
     }
 
     function battleAdvanceQ(wasCorrect) {
@@ -3700,7 +3746,47 @@
         const rb=document.getElementById('btnRematch'); rb.innerHTML='<i class="fas fa-redo"></i> แข่งอีกรอบ'; rb.style.animation=''; rb.disabled=false; rb.style.display=isTechWin?'none':'block';
         document.getElementById('battleScoreBoardUI').style.display='none';
         document.getElementById('battleProgressUI').style.display='none';
+        renderBreakdown();
         nav('pgBattleResult');
+    }
+
+
+    // --- อัปเดต live scorebar ---
+    function updateLiveScoreBar() {
+        const total = Math.max(battleMyGameScore + battleOppGameScore, 1);
+        const myPct = Math.max((battleMyGameScore / total) * 100, 5);
+        const oppPct = Math.max((battleOppGameScore / total) * 100, 5);
+        const fillMe = document.getElementById('blbFillMe');
+        const fillOpp = document.getElementById('blbFillOpp');
+        if(fillMe) fillMe.style.width = myPct + '%';
+        if(fillOpp) fillOpp.style.width = oppPct + '%';
+        const myDisp = document.getElementById('myBattleScoreDisplay');
+        const oppDisp = document.getElementById('oppBattleScoreDisplay');
+        if(myDisp) myDisp.innerText = battleMyGameScore.toLocaleString('th-TH');
+        if(oppDisp) oppDisp.innerText = battleOppGameScore.toLocaleString('th-TH');
+    }
+
+    // --- แสดง per-question breakdown ในหน้าผลลัพธ์ ---
+    function renderBreakdown() {
+        const myGrid = document.getElementById('rbMyGrid');
+        const oppGrid = document.getElementById('rbOppGrid');
+        if(!myGrid || !oppGrid) return;
+        
+        let myHtml = '', oppHtml = '';
+        for(let q = 0; q < BATTLE_Q_COUNT; q++) {
+            const h = battleQHistory[q] || {};
+            const myWon = h.winner === 'me';
+            const oppWon = h.winner === 'opp';
+            const myClass = myWon ? 'won' : (h.myCorrect ? 'draw' : 'lost');
+            const oppClass = oppWon ? 'won' : (h.oppCorrect ? 'draw' : 'lost');
+            const myCls = h.myScore > 0 || h.myCorrect !== undefined ? myClass : 'empty';
+            const oppCls = h.oppScore > 0 || h.oppCorrect !== undefined ? oppClass : 'empty';
+            
+            myHtml += '<div class="rb-cell ' + myCls + '"><div class="rb-q">Q' + (q+1) + '</div><div class="rb-pts">' + (h.myScore||0) + '</div></div>';
+            oppHtml += '<div class="rb-cell ' + oppCls + '"><div class="rb-q">Q' + (q+1) + '</div><div class="rb-pts">' + (h.oppScore||0) + '</div></div>';
+        }
+        myGrid.innerHTML = '<div style="grid-column:1/-1;font-size:11px;color:#60A5FA;font-weight:700;margin-bottom:4px;">🔵 ' + (battleMyInfo?.name||'ฉัน') + '</div>' + myHtml;
+        oppGrid.innerHTML = '<div style="grid-column:1/-1;font-size:11px;color:#F87171;font-weight:700;margin-bottom:4px;">🔴 ' + (battleOppInfo?.name||'คู่แข่ง') + '</div>' + oppHtml;
     }
 
     async function exitBattleResult() {
