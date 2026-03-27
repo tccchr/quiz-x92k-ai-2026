@@ -1134,8 +1134,8 @@ async function enterBattleQueue() {
     if (res.status === 'matched') { isBattleHost = false; triggerMatchFound(battleMyInfo, res.opp_info); }
     else {
         isBattleHost = true;
-        // 🔧 FIX #9: Use consistent channel name pattern
-        battleChannel = sb.channel('battle_' + currentBattleRoomId)
+        // ใช้ channel ชื่อ 'queue_' สำหรับรอคิว (จะลบทิ้งก่อนเข้า startBattleQuiz)
+        battleChannel = sb.channel('queue_' + currentBattleRoomId)
             .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'battle_rooms', filter: 'id=eq.' + currentBattleRoomId },
                 payload => { if(payload.new.status === 'playing') triggerMatchFound(battleMyInfo, payload.new.p2_info); }
             ).subscribe();
@@ -1191,7 +1191,7 @@ function triggerMatchFound(myInfo, opponentInfo) {
 }
 
 // =============================================================================
-// 🔧 MAIN FIX: startBattleQuiz — rewritten with proper sync flow
+// 🔧 MAIN FIX: startBattleQuiz — channel ใช้ชื่อ unique ทุกครั้ง
 // =============================================================================
 async function startBattleQuiz() {
     isBattleMode = true; st.s = 0; isAnswering = false;
@@ -1201,7 +1201,8 @@ async function startBattleQuiz() {
     rematchRequested = false; rematchOppRequested = false;
     battleMyGameScore = 0; battleOppGameScore = 0;
     battleQHistory = []; battleMyTotalTime = 0; battleOppTotalTime = 0;
-    hasReceivedQuestions = false;
+    hasReceivedQuestions = false; battleLoadQCalled = false;
+    oppReadyForQ = false; myReadyForQ = false;
 
     st.myPts = st.l.filter(l => l.employee_id === st.u.employee_id).reduce((a,b)=>a+(b.point||0),0);
     document.getElementById('ingameScore').innerText = (st.myPts||0).toLocaleString('th-TH');
@@ -1211,10 +1212,10 @@ async function startBattleQuiz() {
     const opAv=document.getElementById('blbOppAvatar'); if(opAv) opAv.innerText=(battleOppInfo?.name||'O').charAt(0);
     initBattleProgress();
 
-    // 🔧 FIX #9: Cleanup old channel before creating new one
-    if(battleChannel) { await sb.removeChannel(battleChannel); battleChannel = null; }
+    // ลบ channel คิวเก่าออก (ชื่อ queue_XXX — ไม่ซ้ำกับ channel ใหม่)
+    if(battleChannel) { try { await sb.removeChannel(battleChannel); } catch(e) {} battleChannel = null; }
 
-    // Host generates questions
+    // Host สร้างคำถาม
     if(isBattleHost) {
         const vq = st.q.filter(q=>q.is_active!==false);
         const shuffled = shuffle([...vq]);
@@ -1228,58 +1229,51 @@ async function startBattleQuiz() {
     document.getElementById('peakBanner').style.background='linear-gradient(90deg, #dc2626, #7f1d1d)';
     document.getElementById('peakBanner').style.color='white';
     document.getElementById('peakBanner').innerHTML='⚔️ SITE BATTLE MODE';
-
     showBattleWaitScreen("กำลังเตรียมสมรภูมิ...");
 
-    // 🔧 FIX #9: Use consistent channel name
-    battleChannel = sb.channel('battle_' + currentBattleRoomId)
+    // 🔧 KEY FIX: ใช้ชื่อ channel ที่ UNIQUE ทุกครั้ง (ป้องกัน Supabase channel reuse bug)
+    const channelName = 'game_' + currentBattleRoomId + '_' + Date.now();
+    console.log('[Battle] Creating channel:', channelName, 'isBattleHost:', isBattleHost);
+
+    battleChannel = sb.channel(channelName, { config: { broadcast: { self: false } } })
         .on('broadcast', { event: 'sync_q_set' }, payload => {
-            // 🔧 FIX #1: P2 receives question set — with dedup
             if(!hasReceivedQuestions) {
+                console.log('[P2] Received sync_q_set with', payload.payload.q_ids?.length, 'questions');
                 battleQuestions = payload.payload.q_ids.map(id => st.q.find(q => q.id === id)).filter(Boolean);
                 battleShuffleSeeds = payload.payload.seeds;
                 hasReceivedQuestions = (battleQuestions.length >= BATTLE_Q_COUNT);
                 if(hasReceivedQuestions) {
-                    // 🔧 FIX #3: Send ACK back to Host
                     battleChannel.send({type:'broadcast', event:'sync_q_ack', payload:{emp_id: st.u.employee_id}});
-                    console.log('[P2] Received questions, sent ACK');
-                    // Now P2 is ready to start
+                    console.log('[P2] Got questions! Calling battleLoadQ...');
                     battleLoadQ();
                 }
             }
         })
         .on('broadcast', { event: 'sync_q_ack' }, payload => {
-            // 🔧 FIX #3: Host receives ACK from P2 — stop retrying
-            if(isBattleHost && payload.payload.emp_id !== st.u.employee_id) {
-                console.log('[Host] Received ACK from P2, stopping retry');
+            if(isBattleHost) {
+                console.log('[Host] Got ACK from P2, stopping retry');
                 if(syncQSetRetryInterval) { clearInterval(syncQSetRetryInterval); syncQSetRetryInterval = null; }
-                // Host also starts loading Q
                 battleLoadQ();
             }
         })
         .on('broadcast', { event: 'ready_for_q' }, payload => {
-            // 🔧 FIX #5: Simplified single-layer sync — both sides signal ready per question
-            if(payload.payload.emp_id !== st.u.employee_id && payload.payload.q_idx === battleIndex) {
+            if(payload.payload.q_idx === battleIndex) {
                 oppReadyForQ = true;
                 tryStartQuestionTimer();
             }
         })
         .on('broadcast', { event: 'start_timer' }, payload => {
-            // Host tells everyone to start the timer
             if(payload.payload.q_idx === battleIndex) {
                 startQuestionTimer();
             }
         })
         .on('broadcast', { event: 'score_update' }, payload => {
-            if(payload.payload.emp_id !== st.u.employee_id) {
-                if(payload.payload.gameScore !== undefined) { battleOppGameScore = payload.payload.gameScore; const osd = document.getElementById('oppBattleScoreDisplay'); if(osd) osd.innerText = battleOppGameScore.toLocaleString('th-TH'); updateLiveScoreBar(); }
-                if(payload.payload.correct !== undefined) battleOppCorrect = payload.payload.correct;
-                if(payload.payload.totalTime !== undefined) battleOppTotalTime = payload.payload.totalTime;
-            }
+            if(payload.payload.gameScore !== undefined) { battleOppGameScore = payload.payload.gameScore; const osd = document.getElementById('oppBattleScoreDisplay'); if(osd) osd.innerText = battleOppGameScore.toLocaleString('th-TH'); updateLiveScoreBar(); }
+            if(payload.payload.correct !== undefined) battleOppCorrect = payload.payload.correct;
+            if(payload.payload.totalTime !== undefined) battleOppTotalTime = payload.payload.totalTime;
         })
         .on('broadcast', { event: 'opponent_answered' }, payload => {
-            // 🔧 FIX #6: Dedup by checking q_idx match AND not already processed
-            if(payload.payload.emp_id !== st.u.employee_id && payload.payload.q_idx === battleIndex && !oppAnsweredThisQ) {
+            if(payload.payload.q_idx === battleIndex && !oppAnsweredThisQ) {
                 oppAnsweredThisQ = true;
                 oppAnswerTimeThisQ = parseFloat(payload.payload.time_sec || 0) * 1000;
                 oppCorrectThisQ = payload.payload.is_correct;
@@ -1300,65 +1294,144 @@ async function startBattleQuiz() {
             if(battleHeartbeatInterval) clearInterval(battleHeartbeatInterval);
             let dcReward = 0;
             if(battleIndex >= 5) dcReward = 2000; else if(battleIndex >= 3) dcReward = 500;
-            const dcMsg = dcReward > 0 ? 'คู่แข่งออกไป! คุณได้รับ +' + dcReward + ' pt' : 'คู่แข่งออกไป ไม่ได้รับแต้ม';
-            showAlert(dcMsg, 'ชนะผ่าน!', 'fa-trophy', 'var(--agri-green)', () => showBattleResult(true, true, dcReward));
+            showAlert(dcReward > 0 ? 'คู่แข่งออกไป! +' + dcReward + ' pt' : 'คู่แข่งออกไป', 'ชนะผ่าน!', 'fa-trophy', 'var(--agri-green)', () => showBattleResult(true, true, dcReward));
         })
-        .on('broadcast', { event: 'heartbeat' }, payload => { if(payload.payload.emp_id !== st.u.employee_id) lastOppHeartbeat = Date.now(); })
+        .on('broadcast', { event: 'heartbeat' }, payload => { lastOppHeartbeat = Date.now(); })
         .on('broadcast', { event: 'battle_end_scores' }, payload => {
-            if(payload.payload.emp_id !== st.u.employee_id) {
-                battleOppCorrect = payload.payload.correct;
-                if(payload.payload.gameScore !== undefined) battleOppGameScore = payload.payload.gameScore;
-                if(payload.payload.totalTime !== undefined) battleOppTotalTime = payload.payload.totalTime;
-            }
+            battleOppCorrect = payload.payload.correct;
+            if(payload.payload.gameScore !== undefined) battleOppGameScore = payload.payload.gameScore;
+            if(payload.payload.totalTime !== undefined) battleOppTotalTime = payload.payload.totalTime;
         })
         .on('broadcast', { event: 'rematch_request' }, payload => {
-            if(payload.payload.emp_id !== st.u.employee_id) {
-                rematchOppRequested = true;
-                if(rematchRequested && rematchOppRequested) startRematch();
-                else { const rb=document.getElementById('btnRematch'); if(rb){ rb.innerHTML='<i class="fas fa-redo"></i> คู่แข่งอยากแข่งอีก! กดเลย'; rb.style.animation='pulseGold 1s infinite'; } }
-            }
+            rematchOppRequested = true;
+            if(rematchRequested && rematchOppRequested) startRematch();
+            else { const rb=document.getElementById('btnRematch'); if(rb){ rb.innerHTML='<i class="fas fa-redo"></i> คู่แข่งอยากแข่งอีก! กดเลย'; rb.style.animation='pulseGold 1s infinite'; } }
         })
-        .subscribe((status) => {
-            if(status === 'SUBSCRIBED') {
-                console.log('[Battle] Channel subscribed, isBattleHost:', isBattleHost);
-                // 🔧 FIX #1/#3: Host starts sending sync_q_set periodically until ACK
-                if(isBattleHost && battleQuestions.length > 0) {
-                    const qPayload = { q_ids: battleQuestions.map(q=>q.id), seeds: battleShuffleSeeds };
-                    // Send immediately
-                    battleChannel.send({type:'broadcast', event:'sync_q_set', payload: qPayload});
-                    // 🔧 FIX #3: Retry every 2s until ACK received
-                    syncQSetRetryInterval = setInterval(() => {
-                        if(!currentBattleRoomId || !battleChannel) { clearInterval(syncQSetRetryInterval); return; }
-                        console.log('[Host] Re-sending sync_q_set...');
-                        battleChannel.send({type:'broadcast', event:'sync_q_set', payload: qPayload});
-                    }, 2000);
-                    // 🔧 FIX #4: Force-start after 8s even if no ACK (but only if Host has questions)
-                    forceStartTimeout = setTimeout(() => {
-                        if(syncQSetRetryInterval) { clearInterval(syncQSetRetryInterval); syncQSetRetryInterval = null; }
-                        if(!battleLoadQCalled && hasReceivedQuestions) {
-                            console.log('[Host] Force-starting after timeout');
-                            battleLoadQ();
-                        }
-                    }, 8000);
-                }
-            }
-            if(status==='CLOSED'||status==='CHANNEL_ERROR') {
-                showConnToast(true);
-                setTimeout(()=>{ if(currentBattleRoomId && isBattleMode) try{battleChannel.subscribe();}catch(e){} },2000);
-            }
+        .on('broadcast', { event: 'channel_name' }, payload => {
+            // 🔧 KEY FIX: P2 ได้รับชื่อ channel จาก Host → switch ไปใช้ channel เดียวกัน
+            // ไม่ต้องทำอะไร เพราะ P2 จะ subscribe channel ของตัวเองด้วย
+            // แต่ต้องจำไว้เพื่อ debug
+            console.log('[P2] Got channel_name from host');
         });
+    
+    // 🔧 KEY FIX: ใช้ Supabase Presence หรือ DB เป็น bootstrap
+    // ทั้ง Host และ P2 ต้องอยู่ใน channel เดียวกัน
+    // วิธีแก้: Host เก็บชื่อ channel ลง DB → P2 อ่านจาก DB
+    
+    // Subscribe channel
+    battleChannel.subscribe(async (status) => {
+        console.log('[Battle] Channel status:', status);
+        if(status === 'SUBSCRIBED') {
+            if(isBattleHost) {
+                // Host: บันทึกชื่อ channel ลง battle_rooms.q_locked_by (reuse field)
+                await sb.from('battle_rooms').update({ q_locked_by: channelName }).eq('id', currentBattleRoomId);
+                
+                // เริ่มส่ง sync_q_set ทันที + retry ทุก 2 วินาที
+                const qPayload = { q_ids: battleQuestions.map(q=>q.id), seeds: battleShuffleSeeds };
+                console.log('[Host] Sending sync_q_set...');
+                battleChannel.send({type:'broadcast', event:'sync_q_set', payload: qPayload});
+                syncQSetRetryInterval = setInterval(() => {
+                    if(!currentBattleRoomId || !battleChannel) { clearInterval(syncQSetRetryInterval); syncQSetRetryInterval = null; return; }
+                    console.log('[Host] Re-sending sync_q_set...');
+                    battleChannel.send({type:'broadcast', event:'sync_q_set', payload: qPayload});
+                }, 2000);
+                // Force-start หลัง 10 วินาที
+                forceStartTimeout = setTimeout(() => {
+                    if(syncQSetRetryInterval) { clearInterval(syncQSetRetryInterval); syncQSetRetryInterval = null; }
+                    if(!battleLoadQCalled && hasReceivedQuestions) { console.log('[Host] Force-starting...'); battleLoadQ(); }
+                }, 10000);
+            } else {
+                // P2: อ่านชื่อ channel ของ Host จาก DB แล้ว switch ไปใช้
+                console.log('[P2] Subscribed to own channel, now reading Host channel name from DB...');
+                await switchToHostChannel();
+            }
+        }
+        if(status==='CLOSED'||status==='CHANNEL_ERROR') {
+            showConnToast(true);
+            setTimeout(()=>{ if(currentBattleRoomId && isBattleMode) try{battleChannel.subscribe();}catch(e){} },2000);
+        }
+    });
 
-    // 🔧 FIX #7: Heartbeat with longer timeout (25s instead of 10s)
+    // Heartbeat
     lastOppHeartbeat = Date.now();
     battleHeartbeatInterval = setInterval(() => {
         if(battleChannel) try{battleChannel.send({type:'broadcast',event:'heartbeat',payload:{emp_id:st.u.employee_id}});}catch(e){}
         if(Date.now()-lastOppHeartbeat > 25000 && isBattleMode && battleIndex < BATTLE_Q_COUNT) {
-            let dcReward = 0;
-            if(battleIndex >= 5) dcReward = 2000; else if(battleIndex >= 3) dcReward = 500;
+            let dcReward = 0; if(battleIndex >= 5) dcReward = 2000; else if(battleIndex >= 3) dcReward = 500;
             showAlert('คู่ต่อสู้หลุดการเชื่อมต่อ!','หลุดการเชื่อมต่อ','fa-wifi','var(--agri-green)',()=>showBattleResult(true,true,dcReward));
             clearInterval(battleHeartbeatInterval); battleHeartbeatInterval = null;
         }
     }, 3000);
+}
+
+// 🔧 KEY FIX: P2 อ่านชื่อ channel จาก DB แล้ว switch ไปใช้ channel เดียวกับ Host
+async function switchToHostChannel() {
+    let attempts = 0;
+    const maxAttempts = 15; // ลอง 15 ครั้ง x 1 วิ = 15 วินาที
+    
+    const pollHostChannel = async () => {
+        attempts++;
+        try {
+            const { data } = await sb.from('battle_rooms').select('q_locked_by').eq('id', currentBattleRoomId).single();
+            if(data && data.q_locked_by && data.q_locked_by.startsWith('game_')) {
+                const hostChannelName = data.q_locked_by;
+                console.log('[P2] Found Host channel:', hostChannelName, '— switching...');
+                
+                // ลบ channel เดิมของ P2
+                if(battleChannel) { try { await sb.removeChannel(battleChannel); } catch(e) {} }
+                
+                // สร้าง channel ใหม่ด้วยชื่อเดียวกับ Host
+                battleChannel = sb.channel(hostChannelName, { config: { broadcast: { self: false } } })
+                    .on('broadcast', { event: 'sync_q_set' }, payload => {
+                        if(!hasReceivedQuestions) {
+                            console.log('[P2-switched] Received sync_q_set');
+                            battleQuestions = payload.payload.q_ids.map(id => st.q.find(q => q.id === id)).filter(Boolean);
+                            battleShuffleSeeds = payload.payload.seeds;
+                            hasReceivedQuestions = (battleQuestions.length >= BATTLE_Q_COUNT);
+                            if(hasReceivedQuestions) {
+                                battleChannel.send({type:'broadcast', event:'sync_q_ack', payload:{emp_id: st.u.employee_id}});
+                                console.log('[P2-switched] Got questions! Starting game...');
+                                battleLoadQ();
+                            }
+                        }
+                    })
+                    .on('broadcast', { event: 'ready_for_q' }, payload => { if(payload.payload.q_idx === battleIndex) { oppReadyForQ = true; tryStartQuestionTimer(); } })
+                    .on('broadcast', { event: 'start_timer' }, payload => { if(payload.payload.q_idx === battleIndex) startQuestionTimer(); })
+                    .on('broadcast', { event: 'score_update' }, payload => {
+                        if(payload.payload.gameScore !== undefined) { battleOppGameScore = payload.payload.gameScore; const osd = document.getElementById('oppBattleScoreDisplay'); if(osd) osd.innerText = battleOppGameScore.toLocaleString('th-TH'); updateLiveScoreBar(); }
+                        if(payload.payload.correct !== undefined) battleOppCorrect = payload.payload.correct;
+                        if(payload.payload.totalTime !== undefined) battleOppTotalTime = payload.payload.totalTime;
+                    })
+                    .on('broadcast', { event: 'opponent_answered' }, payload => {
+                        if(payload.payload.q_idx === battleIndex && !oppAnsweredThisQ) {
+                            oppAnsweredThisQ = true; oppAnswerTimeThisQ = parseFloat(payload.payload.time_sec || 0) * 1000; oppCorrectThisQ = payload.payload.is_correct;
+                            if(battleQHistory[payload.payload.q_idx]) { battleQHistory[payload.payload.q_idx].oppTime = oppAnswerTimeThisQ; battleQHistory[payload.payload.q_idx].oppCorrect = payload.payload.is_correct; if(payload.payload.is_correct && payload.payload.rank === 1) { battleQHistory[payload.payload.q_idx].winner = 'opp'; battleQHistory[payload.payload.q_idx].oppScore = 100 + calcSpeedBonus(oppAnswerTimeThisQ); } }
+                            const toast = document.getElementById('oppAnswerToast'); if(toast) { toast.innerText = (payload.payload.is_correct ? '✅' : '❌') + ' คู่แข่งตอบแล้ว (' + payload.payload.time_sec + ' วิ)'; toast.classList.add('show'); setTimeout(() => toast.classList.remove('show'), 3000); }
+                            checkBothAnsweredAndAdvance();
+                        }
+                    })
+                    .on('broadcast', { event: 'opponent_left' }, payload => { if(battleHeartbeatInterval) clearInterval(battleHeartbeatInterval); let dcR = 0; if(battleIndex >= 5) dcR = 2000; else if(battleIndex >= 3) dcR = 500; showAlert(dcR > 0 ? 'คู่แข่งออกไป! +' + dcR + ' pt' : 'คู่แข่งออกไป', 'ชนะผ่าน!', 'fa-trophy', 'var(--agri-green)', () => showBattleResult(true, true, dcR)); })
+                    .on('broadcast', { event: 'heartbeat' }, payload => { lastOppHeartbeat = Date.now(); })
+                    .on('broadcast', { event: 'battle_end_scores' }, payload => { battleOppCorrect = payload.payload.correct; if(payload.payload.gameScore !== undefined) battleOppGameScore = payload.payload.gameScore; if(payload.payload.totalTime !== undefined) battleOppTotalTime = payload.payload.totalTime; })
+                    .on('broadcast', { event: 'rematch_request' }, payload => { rematchOppRequested = true; if(rematchRequested && rematchOppRequested) startRematch(); else { const rb=document.getElementById('btnRematch'); if(rb){ rb.innerHTML='<i class="fas fa-redo"></i> คู่แข่งอยากแข่งอีก!'; rb.style.animation='pulseGold 1s infinite'; } } });
+                
+                battleChannel.subscribe((st2) => {
+                    console.log('[P2-switched] Channel status:', st2);
+                    // เมื่อ subscribe สำเร็จ ไม่ต้องทำอะไรเพิ่ม — รอรับ sync_q_set จาก Host retry
+                });
+                return; // หยุด poll
+            }
+        } catch(e) { console.warn('[P2] Poll error:', e); }
+        
+        if(attempts < maxAttempts && isBattleMode) {
+            setTimeout(pollHostChannel, 1000);
+        } else if(isBattleMode) {
+            console.error('[P2] Could not find Host channel after', maxAttempts, 'attempts');
+            showAlert('ไม่สามารถเชื่อมต่อกับคู่แข่งได้', 'ผิดพลาด', 'fa-times', 'var(--mc-red)', () => exitQuiz());
+        }
+    };
+    
+    pollHostChannel();
 }
 
 // 🔧 FIX #5: Single-layer sync — per-question ready check
