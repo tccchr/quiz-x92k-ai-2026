@@ -644,65 +644,26 @@ const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 const sb = window.supabase.createClient(SB_URL, SB_KEY);
 
 // =============================================================================
-// 🔍 DEBUG LOGGER — บันทึกทุก event ลง Supabase table debug_logs
+// 🔍 DEBUG LOGGER
 // =============================================================================
-const DEBUG_SESSION = 'S_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+const DEBUG_SESSION = "S_" + Date.now() + "_" + Math.random().toString(36).substr(2, 6);
 let debugLogQueue = [];
 let debugFlushTimer = null;
-
 function dlog(eventType, data = {}) {
-    const entry = {
-        session_id: DEBUG_SESSION,
-        emp_id: st.u?.employee_id || 'unknown',
-        room_id: currentBattleRoomId || null,
-        event_type: eventType,
-        event_data: {
-            ...data,
-            ts: Date.now(),
-            isBattleHost: typeof isBattleHost !== 'undefined' ? isBattleHost : null,
-            battleIndex: typeof battleIndex !== 'undefined' ? battleIndex : null,
-            isBattleMode: typeof isBattleMode !== 'undefined' ? isBattleMode : null,
-        },
-        is_host: typeof isBattleHost !== 'undefined' ? isBattleHost : false,
-    };
+    const entry = { session_id: DEBUG_SESSION, emp_id: st.u?.employee_id || "unknown", room_id: currentBattleRoomId || null, event_type: eventType, event_data: { ...data, ts: Date.now(), isBattleHost: typeof isBattleHost !== "undefined" ? isBattleHost : null, battleIndex: typeof battleIndex !== "undefined" ? battleIndex : null, isBattleMode: typeof isBattleMode !== "undefined" ? isBattleMode : null }, is_host: typeof isBattleHost !== "undefined" ? isBattleHost : false };
     debugLogQueue.push(entry);
-    console.log(`[DLOG] ${eventType}`, data);
-    
-    // Flush ทุก 500ms หรือถ้ามี 5+ entries
-    if(!debugFlushTimer) {
-        debugFlushTimer = setTimeout(flushDebugLogs, 500);
-    }
-    if(debugLogQueue.length >= 5) {
-        flushDebugLogs();
-    }
+    console.log("[DLOG] " + eventType, data);
+    if(!debugFlushTimer) debugFlushTimer = setTimeout(flushDebugLogs, 500);
+    if(debugLogQueue.length >= 5) flushDebugLogs();
 }
-
 async function flushDebugLogs() {
     if(debugFlushTimer) { clearTimeout(debugFlushTimer); debugFlushTimer = null; }
     if(debugLogQueue.length === 0) return;
-    const batch = [...debugLogQueue];
-    debugLogQueue = [];
-    try {
-        await sb.from('debug_logs').insert(batch);
-    } catch(e) {
-        console.warn('[DLOG] Flush failed:', e);
-        // ใส่กลับคิว
-        debugLogQueue = [...batch, ...debugLogQueue];
-    }
+    const batch = [...debugLogQueue]; debugLogQueue = [];
+    try { await sb.from("debug_logs").insert(batch); } catch(e) { debugLogQueue = [...batch, ...debugLogQueue]; }
 }
-
-// Flush ก่อนปิดหน้า
-window.addEventListener('beforeunload', () => {
-    if(debugLogQueue.length > 0) {
-        const batch = [...debugLogQueue];
-        debugLogQueue = [];
-        navigator.sendBeacon(
-            SB_URL + '/rest/v1/debug_logs',
-            new Blob([JSON.stringify(batch)], { type: 'application/json' })
-        );
-    }
-});
 // =============================================================================
+
 
 let st = { u: null, e: [], q: [], l: [], p: [], siteStats: [], s: 0, t: null, tab: 'emp', lastId: null, isPeak: false, canPlay: false, timeOffset: 0, qStartTime: 0 };
 let quizInterval = null;
@@ -875,8 +836,8 @@ function startQuiz() {
 }
 
 async function ans(v, btn) {
+    dlog("ANS", { v, battle: isBattleMode, idx: typeof battleIndex !== "undefined" ? battleIndex : -1 });
     if(isBattleMode) { if(myAnsweredThisQ) return; } else { if(isAnswering) return; }
-    dlog('ANS_CLICKED', { choice: v, isBattle: isBattleMode, battleIndex, timeTaken: Date.now() - st.qStartTime });
     isAnswering = true;
     const timeTaken = Date.now() - st.qStartTime;
     if(!isBattleMode) clearInterval(quizInterval);
@@ -1181,9 +1142,9 @@ function initBattleProgress() {
 function updateBattleProgress(idx, status) { const d = document.getElementById('bpDot'+idx); if(d) d.className='bp-dot '+status; }
 
 async function enterBattleQueue() {
+    dlog("QUEUE_START");
     if(!st.canPlay) return;
     if(Date.now() < battleCooldownUntil) { showAlert('กรุณารอ ' + Math.ceil((battleCooldownUntil-Date.now())/1000) + ' วินาที', 'รอสักครู่', 'fa-hourglass-half'); return; }
-    dlog('QUEUE_START', { emp_id: st.u?.employee_id });
     nav('pgBattleQueue'); queueSeconds = 0;
     document.getElementById('queueTimerStr').innerText = "00:00";
     st.myPts = st.l.filter(l => l.employee_id === st.u.employee_id).reduce((a,b)=>a+(b.point||0),0);
@@ -1191,18 +1152,17 @@ async function enterBattleQueue() {
     battleMyInfo = { name: st.u.name.split(' ')[0], site: st.u.site, tier: myRank.name, color: myRank.color[0] };
 
     const { data: res, error } = await sb.rpc('join_battle', { p_emp_id: String(st.u.employee_id), p_info: battleMyInfo });
-    dlog('JOIN_BATTLE_RESULT', { res, error: error?.message });
-    if(error || !res || !res.room_id) { dlog('JOIN_BATTLE_FAIL', { error: error?.message }); showAlert(error?.message || 'ไม่สามารถสร้างห้องได้', 'ระบบขัดข้อง', 'fa-times', 'var(--mc-red)'); cancelBattleQueue(); return; }
+    if(error || !res || !res.room_id) { showAlert(error?.message || 'ไม่สามารถสร้างห้องได้', 'ระบบขัดข้อง', 'fa-times', 'var(--mc-red)'); cancelBattleQueue(); return; }
 
     currentBattleRoomId = res.room_id;
-    if (res.status === 'matched') { dlog('MATCHED_IMMEDIATELY', { room_id: res.room_id, opp: res.opp_info?.name }); isBattleHost = false; triggerMatchFound(battleMyInfo, res.opp_info); }
+    if (res.status === 'matched') { isBattleHost = false; triggerMatchFound(battleMyInfo, res.opp_info); }
     else {
         isBattleHost = true;
-        dlog('WAITING_AS_HOST', { room_id: res.room_id });
+        // 🔧 FIX #9: Use consistent channel name pattern
         battleChannel = sb.channel('queue_' + currentBattleRoomId)
             .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'battle_rooms', filter: 'id=eq.' + currentBattleRoomId },
-                payload => { dlog('PG_CHANGE_DETECTED', { newStatus: payload.new?.status }); if(payload.new.status === 'playing') triggerMatchFound(battleMyInfo, payload.new.p2_info); }
-            ).subscribe((status) => { dlog('QUEUE_CHANNEL_STATUS', { status }); });
+                payload => { if(payload.new.status === 'playing') triggerMatchFound(battleMyInfo, payload.new.p2_info); }
+            ).subscribe();
 
         queueTimer = setInterval(async () => {
             queueSeconds++;
@@ -1235,7 +1195,7 @@ function showRandomTrivia() {
 }
 
 function triggerMatchFound(myInfo, opponentInfo) {
-    dlog('MATCH_FOUND', { opp: opponentInfo?.name, oppSite: opponentInfo?.site });
+    dlog("MATCH_FOUND", { opp: opponentInfo?.name });
     cleanupAllBattleTimers();
     playSound('match');
     battleOppInfo = opponentInfo;
@@ -1255,8 +1215,9 @@ function triggerMatchFound(myInfo, opponentInfo) {
     setTimeout(() => startBattleQuiz(), 3500);
 }
 
+
 // =============================================================================
-// 🔧 MAIN FIX: startBattleQuiz — rewritten with proper sync flow
+// 🔧 FINAL: startBattleQuiz — P2 poll DB → subscribe Host channel ตรง (1 channel only)
 // =============================================================================
 async function startBattleQuiz() {
     dlog('START_BATTLE_QUIZ', { room_id: currentBattleRoomId });
@@ -1267,7 +1228,8 @@ async function startBattleQuiz() {
     rematchRequested = false; rematchOppRequested = false;
     battleMyGameScore = 0; battleOppGameScore = 0;
     battleQHistory = []; battleMyTotalTime = 0; battleOppTotalTime = 0;
-    hasReceivedQuestions = false;
+    hasReceivedQuestions = false; battleLoadQCalled = false;
+    oppReadyForQ = false; myReadyForQ = false;
 
     st.myPts = st.l.filter(l => l.employee_id === st.u.employee_id).reduce((a,b)=>a+(b.point||0),0);
     document.getElementById('ingameScore').innerText = (st.myPts||0).toLocaleString('th-TH');
@@ -1277,20 +1239,9 @@ async function startBattleQuiz() {
     const opAv=document.getElementById('blbOppAvatar'); if(opAv) opAv.innerText=(battleOppInfo?.name||'O').charAt(0);
     initBattleProgress();
 
-    // Cleanup old channel
+    // Cleanup queue channel
     dlog('REMOVING_OLD_CHANNEL', { hadChannel: !!battleChannel });
-    if(battleChannel) { try { await sb.removeChannel(battleChannel); } catch(e) { dlog('REMOVE_CHANNEL_ERROR', { err: e.message }); } battleChannel = null; }
-
-    // Host generates questions
-    if(isBattleHost) {
-        const vq = st.q.filter(q=>q.is_active!==false);
-        dlog('HOST_GENERATING_QUESTIONS', { totalAvailable: vq.length });
-        const shuffled = shuffle([...vq]);
-        battleQuestions = shuffled.slice(0, BATTLE_Q_COUNT);
-        battleShuffleSeeds = battleQuestions.map(()=>Math.floor(Math.random()*2147483646)+1);
-        hasReceivedQuestions = true;
-        dlog('HOST_QUESTIONS_READY', { count: battleQuestions.length, ids: battleQuestions.map(q=>q.id) });
-    }
+    if(battleChannel) { try { await sb.removeChannel(battleChannel); } catch(e) {} battleChannel = null; }
 
     nav('pgQuiz');
     document.getElementById('peakBanner').style.display='block';
@@ -1299,196 +1250,139 @@ async function startBattleQuiz() {
     document.getElementById('peakBanner').innerHTML='⚔️ SITE BATTLE MODE';
     showBattleWaitScreen("กำลังเตรียมสมรภูมิ...");
 
-    // สร้าง channel ด้วยชื่อ unique (ป้องกัน reuse bug)
-    const channelName = 'game_' + currentBattleRoomId + '_' + Date.now();
-    dlog('CREATING_CHANNEL', { channelName });
-
-    battleChannel = sb.channel(channelName, { config: { broadcast: { self: false } } })
-        .on('broadcast', { event: 'sync_q_set' }, payload => {
-            dlog('RCV_SYNC_Q_SET', { hasReceived: hasReceivedQuestions, qCount: payload.payload.q_ids?.length });
-            if(!hasReceivedQuestions) {
-                battleQuestions = payload.payload.q_ids.map(id => st.q.find(q => q.id === id)).filter(Boolean);
-                battleShuffleSeeds = payload.payload.seeds;
-                hasReceivedQuestions = (battleQuestions.length >= BATTLE_Q_COUNT);
-                dlog('P2_PARSED_QUESTIONS', { found: battleQuestions.length, needed: BATTLE_Q_COUNT, hasEnough: hasReceivedQuestions });
-                if(hasReceivedQuestions) {
-                    battleChannel.send({type:'broadcast', event:'sync_q_ack', payload:{emp_id: st.u.employee_id}});
-                    dlog('P2_SENT_ACK_CALLING_LOADQ');
-                    battleLoadQ();
-                }
-            }
-        })
-        .on('broadcast', { event: 'sync_q_ack' }, payload => {
-            dlog('RCV_SYNC_Q_ACK', { from: payload.payload.emp_id });
-            if(isBattleHost) {
-                if(syncQSetRetryInterval) { clearInterval(syncQSetRetryInterval); syncQSetRetryInterval = null; }
-                dlog('HOST_GOT_ACK_CALLING_LOADQ');
-                battleLoadQ();
-            }
-        })
-        .on('broadcast', { event: 'ready_for_q' }, payload => {
-            dlog('RCV_READY_FOR_Q', { from: payload.payload.emp_id, q_idx: payload.payload.q_idx, myBattleIndex: battleIndex });
-            if(payload.payload.emp_id !== st.u.employee_id && payload.payload.q_idx === battleIndex) {
-                oppReadyForQ = true;
-                tryStartQuestionTimer();
-            }
-        })
-        .on('broadcast', { event: 'start_timer' }, payload => {
-            dlog('RCV_START_TIMER', { q_idx: payload.payload.q_idx, myBattleIndex: battleIndex });
-            if(payload.payload.q_idx === battleIndex) {
-                startQuestionTimer();
-            }
-        })
-        .on('broadcast', { event: 'score_update' }, payload => {
-            if(payload.payload.emp_id !== st.u.employee_id) {
-                if(payload.payload.gameScore !== undefined) { battleOppGameScore = payload.payload.gameScore; const osd = document.getElementById('oppBattleScoreDisplay'); if(osd) osd.innerText = battleOppGameScore.toLocaleString('th-TH'); updateLiveScoreBar(); }
-                if(payload.payload.correct !== undefined) battleOppCorrect = payload.payload.correct;
-                if(payload.payload.totalTime !== undefined) battleOppTotalTime = payload.payload.totalTime;
-            }
-        })
-        .on('broadcast', { event: 'opponent_answered' }, payload => {
-            dlog('RCV_OPP_ANSWERED', { q_idx: payload.payload.q_idx, myIdx: battleIndex, alreadyProcessed: oppAnsweredThisQ, correct: payload.payload.is_correct });
-            if(payload.payload.emp_id !== st.u.employee_id && payload.payload.q_idx === battleIndex && !oppAnsweredThisQ) {
-                oppAnsweredThisQ = true;
-                oppAnswerTimeThisQ = parseFloat(payload.payload.time_sec || 0) * 1000;
-                oppCorrectThisQ = payload.payload.is_correct;
-                if(battleQHistory[payload.payload.q_idx]) {
-                    battleQHistory[payload.payload.q_idx].oppTime = oppAnswerTimeThisQ;
-                    battleQHistory[payload.payload.q_idx].oppCorrect = payload.payload.is_correct;
-                    if(payload.payload.is_correct && payload.payload.rank === 1) {
-                        battleQHistory[payload.payload.q_idx].winner = 'opp';
-                        battleQHistory[payload.payload.q_idx].oppScore = 100 + calcSpeedBonus(oppAnswerTimeThisQ);
-                    }
-                }
-                const toast = document.getElementById('oppAnswerToast');
-                if(toast) { const icon = payload.payload.is_correct ? '✅' : '❌'; toast.innerText = icon + ' คู่แข่งตอบแล้ว (' + payload.payload.time_sec + ' วิ)'; toast.classList.add('show'); setTimeout(() => toast.classList.remove('show'), 3000); }
-                checkBothAnsweredAndAdvance();
-            }
-        })
-        .on('broadcast', { event: 'opponent_left' }, payload => {
-            dlog('RCV_OPP_LEFT');
-            if(battleHeartbeatInterval) clearInterval(battleHeartbeatInterval);
-            let dcReward = 0;
-            if(battleIndex >= 5) dcReward = 2000; else if(battleIndex >= 3) dcReward = 500;
-            const dcMsg = dcReward > 0 ? 'คู่แข่งออกไป! คุณได้รับ +' + dcReward + ' pt' : 'คู่แข่งออกไป ไม่ได้รับแต้ม';
-            showAlert(dcMsg, 'ชนะผ่าน!', 'fa-trophy', 'var(--agri-green)', () => showBattleResult(true, true, dcReward));
-        })
-        .on('broadcast', { event: 'heartbeat' }, payload => { if(payload.payload.emp_id !== st.u.employee_id) lastOppHeartbeat = Date.now(); })
-        .on('broadcast', { event: 'battle_end_scores' }, payload => {
-            dlog('RCV_BATTLE_END_SCORES', payload.payload);
-            if(payload.payload.emp_id !== st.u.employee_id) {
-                battleOppCorrect = payload.payload.correct;
-                if(payload.payload.gameScore !== undefined) battleOppGameScore = payload.payload.gameScore;
-                if(payload.payload.totalTime !== undefined) battleOppTotalTime = payload.payload.totalTime;
-            }
-        })
-        .on('broadcast', { event: 'rematch_request' }, payload => {
-            if(payload.payload.emp_id !== st.u.employee_id) {
-                rematchOppRequested = true;
-                if(rematchRequested && rematchOppRequested) startRematch();
-                else { const rb=document.getElementById('btnRematch'); if(rb){ rb.innerHTML='<i class="fas fa-redo"></i> คู่แข่งอยากแข่งอีก! กดเลย'; rb.style.animation='pulseGold 1s infinite'; } }
-            }
-        })
-        .subscribe((status) => {
-            dlog('GAME_CHANNEL_STATUS', { status, channelName });
-            if(status === 'SUBSCRIBED') {
-                // Host: บันทึกชื่อ channel ลง DB → P2 อ่านได้
-                if(isBattleHost && battleQuestions.length > 0) {
-                    dlog('HOST_SAVING_CHANNEL_TO_DB', { channelName });
-                    sb.from('battle_rooms').update({ q_locked_by: channelName }).eq('id', currentBattleRoomId).then(() => {
-                        dlog('HOST_CHANNEL_SAVED_TO_DB');
-                    });
-                    const qPayload = { q_ids: battleQuestions.map(q=>q.id), seeds: battleShuffleSeeds };
-                    dlog('HOST_SENDING_SYNC_Q_SET');
-                    battleChannel.send({type:'broadcast', event:'sync_q_set', payload: qPayload});
-                    syncQSetRetryInterval = setInterval(() => {
-                        if(!currentBattleRoomId || !battleChannel) { clearInterval(syncQSetRetryInterval); return; }
-                        dlog('HOST_RETRY_SYNC_Q_SET');
-                        battleChannel.send({type:'broadcast', event:'sync_q_set', payload: qPayload});
-                    }, 2000);
-                    forceStartTimeout = setTimeout(() => {
-                        if(syncQSetRetryInterval) { clearInterval(syncQSetRetryInterval); syncQSetRetryInterval = null; }
-                        if(!battleLoadQCalled && hasReceivedQuestions) {
-                            dlog('HOST_FORCE_START');
-                            battleLoadQ();
-                        }
-                    }, 10000);
-                }
-                // P2: อ่านชื่อ channel Host จาก DB
-                if(!isBattleHost) {
-                    dlog('P2_READING_HOST_CHANNEL_FROM_DB');
-                    switchToHostChannel();
-                }
-            }
-            if(status==='CLOSED'||status==='CHANNEL_ERROR') {
-                dlog('CHANNEL_ERROR', { status });
-                showConnToast(true);
-                setTimeout(()=>{ if(currentBattleRoomId && isBattleMode) try{battleChannel.subscribe();}catch(e){} },2000);
-            }
-        });
-
     // Heartbeat
     lastOppHeartbeat = Date.now();
     battleHeartbeatInterval = setInterval(() => {
         if(battleChannel) try{battleChannel.send({type:'broadcast',event:'heartbeat',payload:{emp_id:st.u.employee_id}});}catch(e){}
         if(Date.now()-lastOppHeartbeat > 25000 && isBattleMode && battleIndex < BATTLE_Q_COUNT) {
-            dlog('HEARTBEAT_TIMEOUT', { lastHB: lastOppHeartbeat, now: Date.now() });
-            let dcReward = 0;
-            if(battleIndex >= 5) dcReward = 2000; else if(battleIndex >= 3) dcReward = 500;
+            dlog('HEARTBEAT_TIMEOUT');
+            let dcReward = 0; if(battleIndex >= 5) dcReward = 2000; else if(battleIndex >= 3) dcReward = 500;
             showAlert('คู่ต่อสู้หลุดการเชื่อมต่อ!','หลุดการเชื่อมต่อ','fa-wifi','var(--agri-green)',()=>showBattleResult(true,true,dcReward));
             clearInterval(battleHeartbeatInterval); battleHeartbeatInterval = null;
         }
     }, 3000);
+
+    if(isBattleHost) {
+        // ===== HOST =====
+        const vq = st.q.filter(q=>q.is_active!==false);
+        battleQuestions = shuffle([...vq]).slice(0, BATTLE_Q_COUNT);
+        battleShuffleSeeds = battleQuestions.map(()=>Math.floor(Math.random()*2147483646)+1);
+        hasReceivedQuestions = true;
+        dlog('HOST_QUESTIONS_READY', { count: battleQuestions.length });
+
+        const channelName = 'game_' + currentBattleRoomId + '_' + Date.now();
+        dlog('HOST_CREATING_CHANNEL', { channelName });
+        createBattleChannel(channelName);
+        battleChannel.subscribe(async (status) => {
+            dlog('HOST_CH_STATUS', { status });
+            if(status === 'SUBSCRIBED') {
+                await sb.from('battle_rooms').update({ q_locked_by: channelName }).eq('id', currentBattleRoomId);
+                dlog('HOST_SAVED_CH_SENDING_Q');
+                const qPayload = { q_ids: battleQuestions.map(q=>q.id), seeds: battleShuffleSeeds };
+                battleChannel.send({type:'broadcast', event:'sync_q_set', payload: qPayload});
+                syncQSetRetryInterval = setInterval(() => {
+                    if(!currentBattleRoomId || !battleChannel) { clearInterval(syncQSetRetryInterval); syncQSetRetryInterval = null; return; }
+                    dlog('HOST_RETRY_Q');
+                    battleChannel.send({type:'broadcast', event:'sync_q_set', payload: qPayload});
+                }, 2000);
+                forceStartTimeout = setTimeout(() => {
+                    if(syncQSetRetryInterval) { clearInterval(syncQSetRetryInterval); syncQSetRetryInterval = null; }
+                    if(!battleLoadQCalled && hasReceivedQuestions) { dlog('HOST_FORCE_START'); battleLoadQ(); }
+                }, 10000);
+            }
+            if(status==='CLOSED'||status==='CHANNEL_ERROR') {
+                dlog('HOST_CH_ERR', { status });
+                showConnToast(true);
+                setTimeout(()=>{ if(currentBattleRoomId && isBattleMode) try{battleChannel.subscribe();}catch(e){} },2000);
+            }
+        });
+    } else {
+        // ===== P2: NO temp channel — poll DB directly =====
+        dlog('P2_POLL_START');
+        let attempts = 0;
+        const maxAttempts = 20;
+        const poll = async () => {
+            attempts++;
+            dlog('P2_POLL', { attempt: attempts });
+            try {
+                const { data } = await sb.from('battle_rooms').select('q_locked_by').eq('id', currentBattleRoomId).single();
+                if(data && data.q_locked_by && data.q_locked_by.startsWith('game_')) {
+                    const hostCh = data.q_locked_by;
+                    dlog('P2_FOUND_HOST_CH', { hostCh });
+                    createBattleChannel(hostCh);
+                    battleChannel.subscribe((s2) => {
+                        dlog('P2_CH_STATUS', { status: s2 });
+                        if(s2==='CLOSED'||s2==='CHANNEL_ERROR') {
+                            dlog('P2_CH_ERR', { status: s2 });
+                            showConnToast(true);
+                            setTimeout(()=>{ if(currentBattleRoomId && isBattleMode) try{battleChannel.subscribe();}catch(e){} },2000);
+                        }
+                    });
+                    return;
+                }
+            } catch(e) { dlog('P2_POLL_ERR', { err: e.message }); }
+            if(attempts < maxAttempts && isBattleMode) setTimeout(poll, 1000);
+            else if(isBattleMode) { dlog('P2_GAVE_UP'); showAlert('ไม่สามารถเชื่อมต่อกับคู่แข่งได้','ผิดพลาด','fa-times','var(--mc-red)',()=>exitQuiz()); }
+        };
+        poll();
+    }
 }
 
-// 🔧 P2 อ่านชื่อ channel จาก DB แล้ว switch
-async function switchToHostChannel() {
-    let attempts = 0;
-    const maxAttempts = 15;
-    const poll = async () => {
-        attempts++;
-        dlog('P2_POLL_HOST_CHANNEL', { attempt: attempts });
-        try {
-            const { data } = await sb.from('battle_rooms').select('q_locked_by').eq('id', currentBattleRoomId).single();
-            if(data && data.q_locked_by && data.q_locked_by.startsWith('game_')) {
-                const hostCh = data.q_locked_by;
-                dlog('P2_FOUND_HOST_CHANNEL', { hostCh });
-                // ลบ channel เดิม
-                if(battleChannel) { try { await sb.removeChannel(battleChannel); } catch(e) {} }
-                // สร้าง channel ใหม่ชื่อเดียวกับ Host
-                battleChannel = sb.channel(hostCh, { config: { broadcast: { self: false } } })
-                    .on('broadcast', { event: 'sync_q_set' }, payload => {
-                        dlog('P2_SW_RCV_SYNC_Q_SET', { qCount: payload.payload.q_ids?.length });
-                        if(!hasReceivedQuestions) {
-                            battleQuestions = payload.payload.q_ids.map(id => st.q.find(q => q.id === id)).filter(Boolean);
-                            battleShuffleSeeds = payload.payload.seeds;
-                            hasReceivedQuestions = (battleQuestions.length >= BATTLE_Q_COUNT);
-                            if(hasReceivedQuestions) {
-                                battleChannel.send({type:'broadcast', event:'sync_q_ack', payload:{emp_id: st.u.employee_id}});
-                                dlog('P2_SW_GOT_Q_CALLING_LOADQ');
-                                battleLoadQ();
-                            }
-                        }
-                    })
-                    .on('broadcast', { event: 'ready_for_q' }, payload => { if(payload.payload.q_idx === battleIndex) { oppReadyForQ = true; tryStartQuestionTimer(); } })
-                    .on('broadcast', { event: 'start_timer' }, payload => { dlog('P2_SW_RCV_START_TIMER', { q_idx: payload.payload.q_idx }); if(payload.payload.q_idx === battleIndex) startQuestionTimer(); })
-                    .on('broadcast', { event: 'score_update' }, payload => { if(payload.payload.gameScore !== undefined) { battleOppGameScore = payload.payload.gameScore; const osd = document.getElementById('oppBattleScoreDisplay'); if(osd) osd.innerText = battleOppGameScore.toLocaleString('th-TH'); updateLiveScoreBar(); } if(payload.payload.correct !== undefined) battleOppCorrect = payload.payload.correct; if(payload.payload.totalTime !== undefined) battleOppTotalTime = payload.payload.totalTime; })
-                    .on('broadcast', { event: 'opponent_answered' }, payload => {
-                        dlog('P2_SW_RCV_OPP_ANS', { q_idx: payload.payload.q_idx });
-                        if(payload.payload.q_idx === battleIndex && !oppAnsweredThisQ) { oppAnsweredThisQ = true; oppAnswerTimeThisQ = parseFloat(payload.payload.time_sec||0)*1000; oppCorrectThisQ = payload.payload.is_correct; if(battleQHistory[payload.payload.q_idx]) { battleQHistory[payload.payload.q_idx].oppTime=oppAnswerTimeThisQ; battleQHistory[payload.payload.q_idx].oppCorrect=payload.payload.is_correct; if(payload.payload.is_correct && payload.payload.rank===1) { battleQHistory[payload.payload.q_idx].winner='opp'; battleQHistory[payload.payload.q_idx].oppScore=100+calcSpeedBonus(oppAnswerTimeThisQ); } } const toast=document.getElementById('oppAnswerToast'); if(toast){toast.innerText=(payload.payload.is_correct?'✅':'❌')+' คู่แข่งตอบแล้ว ('+payload.payload.time_sec+' วิ)';toast.classList.add('show');setTimeout(()=>toast.classList.remove('show'),3000);} checkBothAnsweredAndAdvance(); }
-                    })
-                    .on('broadcast', { event: 'opponent_left' }, payload => { dlog('P2_SW_OPP_LEFT'); if(battleHeartbeatInterval) clearInterval(battleHeartbeatInterval); let r=0; if(battleIndex>=5) r=2000; else if(battleIndex>=3) r=500; showAlert(r>0?'คู่แข่งออกไป! +'+r+' pt':'คู่แข่งออกไป','ชนะผ่าน!','fa-trophy','var(--agri-green)',()=>showBattleResult(true,true,r)); })
-                    .on('broadcast', { event: 'heartbeat' }, payload => { lastOppHeartbeat = Date.now(); })
-                    .on('broadcast', { event: 'battle_end_scores' }, payload => { battleOppCorrect=payload.payload.correct; if(payload.payload.gameScore!==undefined) battleOppGameScore=payload.payload.gameScore; if(payload.payload.totalTime!==undefined) battleOppTotalTime=payload.payload.totalTime; })
-                    .on('broadcast', { event: 'rematch_request' }, payload => { rematchOppRequested=true; if(rematchRequested&&rematchOppRequested) startRematch(); else { const rb=document.getElementById('btnRematch'); if(rb){rb.innerHTML='<i class="fas fa-redo"></i> คู่แข่งอยากแข่งอีก!';rb.style.animation='pulseGold 1s infinite';} } });
-                battleChannel.subscribe((st2) => { dlog('P2_SWITCHED_CHANNEL_STATUS', { status: st2, channel: hostCh }); });
-                return;
+// === SHARED: สร้าง channel + ติด event handlers ===
+function createBattleChannel(chName) {
+    battleChannel = sb.channel(chName, { config: { broadcast: { self: false } } })
+        .on('broadcast', { event: 'sync_q_set' }, payload => {
+            dlog('RCV_Q_SET', { has: hasReceivedQuestions, n: payload.payload.q_ids?.length });
+            if(!hasReceivedQuestions) {
+                battleQuestions = payload.payload.q_ids.map(id => st.q.find(q => q.id === id)).filter(Boolean);
+                battleShuffleSeeds = payload.payload.seeds;
+                hasReceivedQuestions = (battleQuestions.length >= BATTLE_Q_COUNT);
+                if(hasReceivedQuestions) {
+                    battleChannel.send({type:'broadcast', event:'sync_q_ack', payload:{emp_id: st.u.employee_id}});
+                    dlog('P2_GOT_Q'); battleLoadQ();
+                }
             }
-        } catch(e) { dlog('P2_POLL_ERROR', { err: e.message }); }
-        if(attempts < maxAttempts && isBattleMode) setTimeout(poll, 1000);
-        else if(isBattleMode) { dlog('P2_POLL_GAVE_UP'); showAlert('ไม่สามารถเชื่อมต่อกับคู่แข่งได้','ผิดพลาด','fa-times','var(--mc-red)',()=>exitQuiz()); }
-    };
-    poll();
+        })
+        .on('broadcast', { event: 'sync_q_ack' }, payload => {
+            dlog('RCV_ACK');
+            if(isBattleHost) { if(syncQSetRetryInterval) { clearInterval(syncQSetRetryInterval); syncQSetRetryInterval = null; } dlog('HOST_ACK_LOADQ'); battleLoadQ(); }
+        })
+        .on('broadcast', { event: 'ready_for_q' }, payload => {
+            dlog('RCV_READY', { q: payload.payload.q_idx, my: battleIndex });
+            if(payload.payload.q_idx === battleIndex) { oppReadyForQ = true; tryStartQuestionTimer(); }
+        })
+        .on('broadcast', { event: 'start_timer' }, payload => {
+            dlog('RCV_TIMER', { q: payload.payload.q_idx });
+            if(payload.payload.q_idx === battleIndex) startQuestionTimer();
+        })
+        .on('broadcast', { event: 'score_update' }, payload => {
+            if(payload.payload.gameScore !== undefined) { battleOppGameScore = payload.payload.gameScore; const osd = document.getElementById('oppBattleScoreDisplay'); if(osd) osd.innerText = battleOppGameScore.toLocaleString('th-TH'); updateLiveScoreBar(); }
+            if(payload.payload.correct !== undefined) battleOppCorrect = payload.payload.correct;
+            if(payload.payload.totalTime !== undefined) battleOppTotalTime = payload.payload.totalTime;
+        })
+        .on('broadcast', { event: 'opponent_answered' }, payload => {
+            dlog('RCV_OPP_ANS', { q: payload.payload.q_idx, my: battleIndex, done: oppAnsweredThisQ });
+            if(payload.payload.q_idx === battleIndex && !oppAnsweredThisQ) {
+                oppAnsweredThisQ = true; oppAnswerTimeThisQ = parseFloat(payload.payload.time_sec || 0) * 1000; oppCorrectThisQ = payload.payload.is_correct;
+                if(battleQHistory[payload.payload.q_idx]) { battleQHistory[payload.payload.q_idx].oppTime = oppAnswerTimeThisQ; battleQHistory[payload.payload.q_idx].oppCorrect = payload.payload.is_correct; if(payload.payload.is_correct && payload.payload.rank === 1) { battleQHistory[payload.payload.q_idx].winner = 'opp'; battleQHistory[payload.payload.q_idx].oppScore = 100 + calcSpeedBonus(oppAnswerTimeThisQ); } }
+                const toast = document.getElementById('oppAnswerToast'); if(toast) { toast.innerText = (payload.payload.is_correct ? '✅' : '❌') + ' คู่แข่งตอบแล้ว (' + payload.payload.time_sec + ' วิ)'; toast.classList.add('show'); setTimeout(() => toast.classList.remove('show'), 3000); }
+                checkBothAnsweredAndAdvance();
+            }
+        })
+        .on('broadcast', { event: 'opponent_left' }, payload => {
+            dlog('RCV_OPP_LEFT'); if(battleHeartbeatInterval) clearInterval(battleHeartbeatInterval);
+            let r = 0; if(battleIndex >= 5) r = 2000; else if(battleIndex >= 3) r = 500;
+            showAlert(r > 0 ? 'คู่แข่งออกไป! +' + r + ' pt' : 'คู่แข่งออกไป', 'ชนะผ่าน!', 'fa-trophy', 'var(--agri-green)', () => showBattleResult(true, true, r));
+        })
+        .on('broadcast', { event: 'heartbeat' }, payload => { lastOppHeartbeat = Date.now(); })
+        .on('broadcast', { event: 'battle_end_scores' }, payload => {
+            dlog('RCV_END', payload.payload);
+            battleOppCorrect = payload.payload.correct; if(payload.payload.gameScore !== undefined) battleOppGameScore = payload.payload.gameScore; if(payload.payload.totalTime !== undefined) battleOppTotalTime = payload.payload.totalTime;
+        })
+        .on('broadcast', { event: 'rematch_request' }, payload => {
+            rematchOppRequested = true; if(rematchRequested && rematchOppRequested) startRematch();
+            else { const rb = document.getElementById('btnRematch'); if(rb) { rb.innerHTML = '<i class="fas fa-redo"></i> คู่แข่งอยากแข่งอีก!'; rb.style.animation = 'pulseGold 1s infinite'; } }
+        });
 }
 
 // 🔧 FIX #5: Single-layer sync — per-question ready check
@@ -1497,22 +1391,19 @@ let myReadyForQ = false;
 let battleLoadQCalled = false;
 
 function tryStartQuestionTimer() {
-    dlog('TRY_START_TIMER', { myReady: myReadyForQ, oppReady: oppReadyForQ, isHost: isBattleHost });
-    // 🔧 FIX #5: Only Host decides when to start timer
+    dlog('TRY_TIMER', { myR: myReadyForQ, oppR: oppReadyForQ, host: isBattleHost });
     if(isBattleHost && myReadyForQ && oppReadyForQ) {
         myReadyForQ = false; oppReadyForQ = false;
         if(forceStartTimeout) { clearTimeout(forceStartTimeout); forceStartTimeout = null; }
-        // Broadcast start signal
         battleChannel.send({type:'broadcast', event:'start_timer', payload:{q_idx: battleIndex}});
         startQuestionTimer();
     }
 }
 
 function startQuestionTimer() {
-    dlog('START_Q_TIMER', { battleIndex, isAnswering });
+    dlog('START_TIMER', { idx: battleIndex });
     const toast = document.getElementById('oppAnswerToast'); if(toast) toast.classList.remove('show');
     if(forceStartTimeout) { clearTimeout(forceStartTimeout); forceStartTimeout = null; }
-    // 🔧 FIX #8: Clear interval BEFORE setting isAnswering
     clearInterval(quizInterval);
     isAnswering = false;
     st.qStartTime = Date.now();
@@ -1526,7 +1417,6 @@ function startQuestionTimer() {
         countBox.innerText = Math.max(0,timeLeft).toFixed(1);
         if(timeLeft <= 3.0) { tBar.style.background='linear-gradient(90deg, var(--mc-red), var(--mc-red-light))'; panic.classList.add('active'); countBox.classList.add('urgent'); if(Math.floor(timeLeft*10)%10===0) playSound('tick'); }
         if(timeLeft <= 0) {
-            // 🔧 FIX #8: clearInterval first to prevent any re-entry
             clearInterval(quizInterval); quizInterval = null;
             if(!myAnsweredThisQ) {
                 myAnsweredThisQ = true;
@@ -1540,13 +1430,12 @@ function startQuestionTimer() {
     }, 100);
 }
 
-// 🔧 FIX #2/#5: Rewritten battleLoadQ — no more dual sync layers
 function battleLoadQ() {
     battleLoadQCalled = true;
-    dlog('BATTLE_LOAD_Q', { battleIndex, totalQ: battleQuestions.length, hasReceived: hasReceivedQuestions });
-    if(battleIndex >= BATTLE_Q_COUNT || battleIndex >= battleQuestions.length) { dlog('BATTLE_LOAD_Q_FINISH', { reason: 'index_exceeded' }); finishBattle(); return; }
+    dlog('LOAD_Q', { idx: battleIndex, total: battleQuestions.length, has: hasReceivedQuestions });
+    if(battleIndex >= BATTLE_Q_COUNT || battleIndex >= battleQuestions.length) { finishBattle(); return; }
     if(!hasReceivedQuestions || battleQuestions.length === 0) {
-        dlog('BATTLE_LOAD_Q_NO_QUESTIONS', { hasReceived: hasReceivedQuestions, len: battleQuestions.length });
+        dlog('LOAD_Q_NO_DATA');
         showBattleWaitScreen("กำลังรอข้อมูลคำถาม...");
         return;
     }
@@ -1566,8 +1455,7 @@ function battleLoadQ() {
     const seed = battleShuffleSeeds[battleIndex] || (battleIndex+1)*12345;
     const choiceOrder = seededShuffle([1,2,3,4], seed);
 
-    // Render question UI
-    isAnswering = true; // Lock until timer starts
+    isAnswering = true;
     document.getElementById('qArea').innerHTML = `
         <div style="text-align:center; animation: slideUpFade 0.4s ease;">
             <div style="font-size:13px; color:var(--text-muted); margin-bottom:8px; letter-spacing:2px;">ข้อ ${battleIndex+1} / ${BATTLE_Q_COUNT}</div>
@@ -1577,15 +1465,13 @@ function battleLoadQ() {
             ${choiceOrder.map((i, idx) => `<button class="choice-btn" style="animation: slideUpFade 0.4s ease ${idx*0.1}s backwards;" onclick="ans('${i}',this)">${st.curQ['option_'+i]}</button>`).join('')}
         </div>`;
 
-    // 🔧 FIX #5: Signal ready for this question
     myReadyForQ = true;
     if(battleChannel) battleChannel.send({type:'broadcast', event:'ready_for_q', payload:{emp_id: st.u.employee_id, q_idx: battleIndex}});
     tryStartQuestionTimer();
 
-    // 🔧 FIX #4: Force-start timer after 5s if opponent doesn't signal ready
     forceStartTimeout = setTimeout(() => {
         if(isAnswering && isBattleMode) {
-            console.log('[Force] Starting timer without opponent ready signal');
+            dlog('FORCE_TIMER');
             if(isBattleHost && battleChannel) {
                 battleChannel.send({type:'broadcast', event:'start_timer', payload:{q_idx: battleIndex}});
             }
@@ -1603,11 +1489,10 @@ function cleanupPerQuestionState() {
 }
 
 function battleAdvanceQ(wasCorrect) {
-    dlog('BATTLE_ADVANCE_Q', { battleIndex, wasCorrect, isAdvancingQ, isBattleMode });
+    dlog('ADVANCE', { idx: battleIndex, wasCorrect, advancing: isAdvancingQ });
     if(isAdvancingQ || !isBattleMode) return;
     isAdvancingQ = true;
     if(!wasCorrect && !battleResults[battleIndex]) battleResults[battleIndex]='miss';
-    // 🔧 FIX #8: Clear interval immediately
     clearInterval(quizInterval); quizInterval = null;
     setTimeout(() => {
         if(!isBattleMode) return;
@@ -1624,9 +1509,8 @@ function checkBothAnsweredAndAdvance() {
 }
 
 async function finishBattle() {
-    dlog('FINISH_BATTLE', { isBattleMode, battleFinalized, myScore: battleMyGameScore, oppScore: battleOppGameScore });
+    dlog('FINISH', { finalized: battleFinalized, myScore: battleMyGameScore, oppScore: battleOppGameScore });
     if(!isBattleMode) return;
-    // 🔧 FIX #10: Prevent double finalize
     if(battleFinalized) return;
     battleFinalized = true;
 
@@ -1637,6 +1521,7 @@ async function finishBattle() {
     setTimeout(async () => {
         try {
             const { data: dbResult } = await sb.rpc('finalize_battle', { p_room_id: currentBattleRoomId });
+            dlog('FINALIZE_RESULT', { dbResult });
             if(dbResult && dbResult.players && dbResult.players.length > 0) {
                 const winnerId = dbResult.players[0].emp_id;
                 const isWin = (winnerId === String(st.u.employee_id));
@@ -1647,6 +1532,7 @@ async function finishBattle() {
                 showBattleResult(isWin, false, isWin ? 2000 : 0);
             }
         } catch(e) {
+            dlog('FINALIZE_ERR', { err: e.message });
             const isWin = battleMyGameScore > battleOppGameScore;
             showBattleResult(isWin, false, isWin ? 2000 : 0);
         }
@@ -1690,6 +1576,7 @@ async function showBattleResult(isWin, isTechWin, dcOverrideReward) {
     document.getElementById('battleProgressUI').style.display='none';
     renderBreakdown();
     nav('pgBattleResult');
+    flushDebugLogs(); // flush ทันทีหลังจบเกม
 }
 
 function updateLiveScoreBar() {
@@ -1751,27 +1638,6 @@ function showBattleWaitScreen(customText) {
     ws.innerHTML = `<i class="fas fa-spinner fa-spin" style="font-size:40px; color:var(--gold); margin-bottom:15px;"></i><h2 style="font-family:Outfit">${customText}</h2>`;
     ws.style.display = 'flex';
 }
-
-function loadQ(lst, forceQ) {
-    forceQ = forceQ || null; isAnswering = false;
-    const tBar=document.getElementById('tBar'), panic=document.getElementById('panicOverlay'), countBox=document.getElementById('bigCountdown');
-    tBar.style.width='100%'; tBar.style.background='linear-gradient(90deg, var(--agri-green), var(--agri-green-light))';
-    panic.classList.remove('active'); countBox.classList.remove('urgent'); countBox.innerText="8.0";
-    clearInterval(quizInterval); document.getElementById('streak').innerText=st.s;
-    if(forceQ) { st.curQ=forceQ; } else { let available=lst; if(lst.length>1&&st.lastId){available=lst.filter(q=>q.id!==st.lastId);} st.curQ=available[Math.floor(Math.random()*available.length)]; }
-    st.lastId=st.curQ.id; st.qStartTime=Date.now();
-    const ws=document.getElementById('battleWaitScreen'); if(ws) ws.style.display='none';
-    const basePt=Math.min((st.s+1)*10,50); const finalPt=st.isPeak?basePt*2:basePt;
-    document.getElementById('qArea').innerHTML = `<div style="text-align:center; animation: slideUpFade 0.4s ease;"><div class="q-txt">${st.curQ.question}</div><div class="potential-win">รับคะแนน: +${finalPt}</div></div><div class="choice-grid" style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">${shuffle([1,2,3,4]).map((i, idx) => `<button class="choice-btn" style="animation: slideUpFade 0.4s ease ${idx*0.1}s backwards;" onclick="ans('${i}',this)">${st.curQ['option_'+i]}</button>`).join('')}</div>`;
-    let timeLeft=8.0;
-    quizInterval=setInterval(()=>{
-        if(isAnswering) return; timeLeft-=0.1;
-        tBar.style.width=(timeLeft/8.0)*100+'%'; countBox.innerText=Math.max(0,timeLeft).toFixed(1);
-        if(timeLeft<=3.0){tBar.style.background='linear-gradient(90deg, var(--mc-red), var(--mc-red-light))';panic.classList.add('active');countBox.classList.add('urgent');}
-        if(timeLeft<=0){clearInterval(quizInterval);isAnswering=false;endQ(false);}
-    },100);
-}
-
 let hideTimeout = null;
 document.addEventListener("visibilitychange", () => {
     const isQueueActive = document.getElementById('pgBattleQueue').classList.contains('active');
