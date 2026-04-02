@@ -1274,7 +1274,7 @@ async function startBattleQuiz() {
                 forceStartTimeout = setTimeout(() => {
                     if(syncQSetRetryInterval) { clearInterval(syncQSetRetryInterval); syncQSetRetryInterval = null; }
                     if(!battleLoadQCalled && hasReceivedQuestions) battleLoadQ();
-                }, 5000);
+                }, 12000);
             }
             if(status==='CLOSED'||status==='CHANNEL_ERROR') {
                 showConnToast(true);
@@ -1291,6 +1291,9 @@ async function startBattleQuiz() {
                 if(data && data.q_locked_by && data.q_locked_by.startsWith('game_')) {
                     createBattleChannel(data.q_locked_by);
                     battleChannel.subscribe((s2) => {
+                        if(s2==='SUBSCRIBED') {
+                            setTimeout(() => { if(!hasReceivedQuestions && battleChannel && isBattleMode) battleChannel.send({type:'broadcast', event:'request_sync', payload:{}}); }, 2000);
+                        }
                         if(s2==='CLOSED'||s2==='CHANNEL_ERROR') {
                             showConnToast(true);
                             setTimeout(()=>{ if(currentBattleRoomId && isBattleMode) try{battleChannel.subscribe();}catch(e){} },2000);
@@ -1309,14 +1312,22 @@ async function startBattleQuiz() {
 function createBattleChannel(chName) {
     battleChannel = sb.channel(chName, { config: { broadcast: { self: false } } })
         .on('broadcast', { event: 'sync_q_set' }, payload => {
-            if(!hasReceivedQuestions && payload.payload.q_ids) {
-                battleQuestions = payload.payload.q_ids.map(id => st.q.find(q => q.id === id)).filter(Boolean);
-                battleShuffleSeeds = payload.payload.seeds || [];
-                hasReceivedQuestions = (battleQuestions.length >= BATTLE_Q_COUNT);
+            if(payload.payload.q_ids) {
+                if(!hasReceivedQuestions) {
+                    battleQuestions = payload.payload.q_ids.map(id => st.q.find(q => q.id === id)).filter(Boolean);
+                    battleShuffleSeeds = payload.payload.seeds || [];
+                    hasReceivedQuestions = (battleQuestions.length >= BATTLE_Q_COUNT);
+                }
                 if(hasReceivedQuestions) {
                     battleChannel.send({type:'broadcast', event:'sync_q_ack', payload:{emp_id: st.u.employee_id}});
-                    battleLoadQ();
+                    if(!battleLoadQCalled) battleLoadQ();
                 }
+            }
+        })
+        .on('broadcast', { event: 'request_sync' }, () => {
+            if(isBattleHost && battleQuestions.length > 0) {
+                const qPayload = { q_ids: battleQuestions.map(q=>q.id), seeds: battleShuffleSeeds };
+                battleChannel.send({type:'broadcast', event:'sync_q_set', payload: qPayload});
             }
         })
         .on('broadcast', { event: 'sync_q_ack' }, () => {
@@ -1390,6 +1401,7 @@ function startQuestionTimer() {
                 battleResults[battleIndex] = 'timeout';
                 battleQHistory[battleIndex] = battleQHistory[battleIndex] || {};
                 battleQHistory[battleIndex].myScore = 0; battleQHistory[battleIndex].myTime = 8000; battleQHistory[battleIndex].myCorrect = false;
+                if(battleChannel) { battleChannel.send({ type:'broadcast', event:'opponent_answered', payload:{ emp_id: st.u.employee_id, q_idx: battleIndex, time_sec: 8.0, is_correct: false, rank: 0 }}); }
             }
             battleAdvanceQ(false);
         }
@@ -1398,6 +1410,7 @@ function startQuestionTimer() {
 
 function battleLoadQ() {
     battleLoadQCalled = true;
+    if(forceStartTimeout) { clearTimeout(forceStartTimeout); forceStartTimeout = null; }
     if(battleIndex >= BATTLE_Q_COUNT || battleIndex >= battleQuestions.length) { finishBattle(); return; }
     if(!hasReceivedQuestions || battleQuestions.length === 0) { showBattleWaitScreen("กำลังรอข้อมูลคำถาม..."); return; }
 
@@ -1447,6 +1460,7 @@ function battleLoadQ() {
 function battleAdvanceQ(wasCorrect) {
     if(isAdvancingQ || !isBattleMode) return;
     isAdvancingQ = true;
+    if(forceStartTimeout) { clearTimeout(forceStartTimeout); forceStartTimeout = null; }
     if(!wasCorrect && !battleResults[battleIndex]) battleResults[battleIndex]='miss';
     clearInterval(quizInterval); quizInterval = null; timerRunning = false;
     // FIX BUG #3: capture state ก่อน setTimeout เพราะ isBattleMode อาจเปลี่ยนได้
