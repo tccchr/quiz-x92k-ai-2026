@@ -1,7 +1,7 @@
 <!DOCTYPE html><html lang="th"><head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
-  <title>get GREAT by Human Resources Development</title>
+  <title>V.6 get GREAT by Human Resources Development</title>
   
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=Kanit:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
@@ -1143,8 +1143,31 @@ async function enterBattleQueue() {
         queueTimer = setInterval(async () => {
             queueSeconds++;
             document.getElementById('queueTimerStr').innerText = Math.floor(queueSeconds/60).toString().padStart(2,'0') + ':' + (queueSeconds%60).toString().padStart(2,'0');
-            const pollInt = Math.min(10 + Math.floor(queueSeconds/30)*5, 30);
-            if(queueSeconds % pollInt === 0 && currentBattleRoomId) {
+            
+            // FIX BUG #1: Re-call join_battle ทุก 5 วินาที เพื่อให้ tier expansion re-evaluate
+            if(queueSeconds % 5 === 0 && currentBattleRoomId && isBattleHost) {
+                try {
+                    const { data: reMatch } = await sb.rpc('join_battle', { p_emp_id: String(st.u.employee_id), p_info: battleMyInfo });
+                    if(reMatch && reMatch.status === 'matched') {
+                        // จับคู่ได้แล้ว! room_id อาจเปลี่ยน (เราเข้าห้องคนอื่น)
+                        currentBattleRoomId = reMatch.room_id;
+                        isBattleHost = false;
+                        triggerMatchFound(battleMyInfo, reMatch.opp_info);
+                        return;
+                    } else if(reMatch && reMatch.room_id !== currentBattleRoomId) {
+                        // ห้องเก่าถูก cancel, ห้องใหม่ถูกสร้าง — อัพเดต subscription
+                        if(battleChannel) { try { await sb.removeChannel(battleChannel); } catch(e) {} }
+                        currentBattleRoomId = reMatch.room_id;
+                        battleChannel = sb.channel('queue_' + currentBattleRoomId)
+                            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'battle_rooms', filter: 'id=eq.' + currentBattleRoomId },
+                                payload => { if(payload.new.status === 'playing') triggerMatchFound(battleMyInfo, payload.new.p2_info); }
+                            ).subscribe();
+                    }
+                } catch(e) {}
+            }
+            
+            // Fallback: poll DB เช็ค status (ในกรณี realtime miss)
+            if(queueSeconds % 8 === 0 && currentBattleRoomId) {
                 const { data: cr } = await sb.from('battle_rooms').select('status, p2_info').eq('id', currentBattleRoomId).single();
                 if(cr && cr.status === 'playing' && cr.p2_info) triggerMatchFound(battleMyInfo, cr.p2_info);
             }
@@ -1251,7 +1274,7 @@ async function startBattleQuiz() {
                 forceStartTimeout = setTimeout(() => {
                     if(syncQSetRetryInterval) { clearInterval(syncQSetRetryInterval); syncQSetRetryInterval = null; }
                     if(!battleLoadQCalled && hasReceivedQuestions) battleLoadQ();
-                }, 8000);
+                }, 5000);
             }
             if(status==='CLOSED'||status==='CHANNEL_ERROR') {
                 showConnToast(true);
@@ -1333,12 +1356,14 @@ let oppReadyForQ = false, myReadyForQ = false, battleLoadQCalled = false;
 let timerRunning = false, hostSetupDone = false;
 
 function tryStartQuestionTimer() {
-    if(isBattleHost && myReadyForQ && oppReadyForQ && !timerRunning) {
-        myReadyForQ = false; oppReadyForQ = false;
-        if(forceStartTimeout) { clearTimeout(forceStartTimeout); forceStartTimeout = null; }
+    if(!myReadyForQ || !oppReadyForQ || timerRunning) return;
+    // ทั้ง Host และ P2: ถ้าทั้งคู่ ready แล้ว → Host ส่ง start_timer, P2 เริ่มเลย
+    myReadyForQ = false; oppReadyForQ = false;
+    if(forceStartTimeout) { clearTimeout(forceStartTimeout); forceStartTimeout = null; }
+    if(isBattleHost && battleChannel) {
         battleChannel.send({type:'broadcast', event:'start_timer', payload:{q_idx: battleIndex}});
-        startQuestionTimer();
     }
+    startQuestionTimer();
 }
 
 function startQuestionTimer() {
@@ -1410,12 +1435,13 @@ function battleLoadQ() {
     if(battleChannel) battleChannel.send({type:'broadcast', event:'ready_for_q', payload:{emp_id: st.u.employee_id, q_idx: battleIndex}});
     tryStartQuestionTimer();
 
+    // FIX BUG #2: forceStart 3 วินาทีแทน 5 — ลด delay ข้อแรก
     forceStartTimeout = setTimeout(() => {
         if(!timerRunning && isAnswering && isBattleMode) {
-            if(isBattleHost && battleChannel) battleChannel.send({type:'broadcast', event:'start_timer', payload:{q_idx: battleIndex}});
+            if(battleChannel) battleChannel.send({type:'broadcast', event:'start_timer', payload:{q_idx: battleIndex}});
             startQuestionTimer();
         }
-    }, 5000);
+    }, 3000);
 }
 
 function battleAdvanceQ(wasCorrect) {
@@ -1423,26 +1449,44 @@ function battleAdvanceQ(wasCorrect) {
     isAdvancingQ = true;
     if(!wasCorrect && !battleResults[battleIndex]) battleResults[battleIndex]='miss';
     clearInterval(quizInterval); quizInterval = null; timerRunning = false;
-    setTimeout(() => { if(!isBattleMode) return; battleIndex++; if(battleIndex >= BATTLE_Q_COUNT) { finishBattle(); return; } battleLoadQ(); }, 600);
+    // FIX BUG #3: capture state ก่อน setTimeout เพราะ isBattleMode อาจเปลี่ยนได้
+    const nextIdx = battleIndex + 1;
+    const shouldFinish = nextIdx >= BATTLE_Q_COUNT;
+    setTimeout(() => {
+        battleIndex = nextIdx;
+        if(shouldFinish) { finishBattle(); return; }
+        if(!isBattleMode) return; // ถ้า exit แล้วจริงๆ ก็หยุด
+        battleLoadQ();
+    }, 600);
 }
 
 function checkBothAnsweredAndAdvance() { if(myAnsweredThisQ && oppAnsweredThisQ && !isAdvancingQ) battleAdvanceQ(false); }
 
 async function finishBattle() {
-    if(!isBattleMode || battleFinalized) return;
+    // FIX BUG #3: ไม่เช็ค isBattleMode เพราะอาจถูก set false ก่อน setTimeout fire
+    if(battleFinalized) return;
     battleFinalized = true;
     cleanupAllBattleTimers(); isAnswering = false; timerRunning = false;
-    if(battleChannel) battleChannel.send({type:'broadcast',event:'battle_end_scores',payload:{emp_id:st.u.employee_id,correct:battleMyCorrect,gameScore:battleMyGameScore,totalTime:battleMyTotalTime}});
+    // ส่งคะแนนจบเกมให้คู่แข่ง
+    if(battleChannel) try { battleChannel.send({type:'broadcast',event:'battle_end_scores',payload:{emp_id:st.u.employee_id,correct:battleMyCorrect,gameScore:battleMyGameScore,totalTime:battleMyTotalTime}}); } catch(e){}
+    // รอ 2.5 วิ ให้ทั้ง 2 ฝั่งส่ง battle_answers ครบ แล้ว finalize
     setTimeout(async () => {
         try {
-            const { data: dbResult } = await sb.rpc('finalize_battle', { p_room_id: currentBattleRoomId });
+            const { data: dbResult, error: rpcErr } = await sb.rpc('finalize_battle', { p_room_id: currentBattleRoomId });
+            if(rpcErr) { console.error('finalize_battle RPC error:', rpcErr); }
             if(dbResult && dbResult.players && dbResult.players.length > 0) {
                 const winnerId = dbResult.players[0].emp_id;
                 const isWin = (winnerId === String(st.u.employee_id));
                 for(const p of dbResult.players) { if(p.emp_id !== String(st.u.employee_id)) { battleOppGameScore = p.score || 0; battleOppCorrect = p.correct || 0; battleOppTotalTime = p.total_time || 0; } }
                 showBattleResult(isWin, false, isWin ? 2000 : 0);
-            } else { showBattleResult(battleMyGameScore > battleOppGameScore, false, battleMyGameScore > battleOppGameScore ? 2000 : 0); }
-        } catch(e) { showBattleResult(battleMyGameScore > battleOppGameScore, false, battleMyGameScore > battleOppGameScore ? 2000 : 0); }
+            } else {
+                // Fallback: ใช้คะแนนที่เก็บ local
+                showBattleResult(battleMyGameScore > battleOppGameScore, false, battleMyGameScore > battleOppGameScore ? 2000 : 0);
+            }
+        } catch(e) {
+            console.error('finishBattle error:', e);
+            showBattleResult(battleMyGameScore > battleOppGameScore, false, battleMyGameScore > battleOppGameScore ? 2000 : 0);
+        }
     }, 2500);
 }
 
