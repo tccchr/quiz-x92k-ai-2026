@@ -810,6 +810,9 @@ function startQuiz() {
     st.s=0; isAnswering = false;
     st.myPts = st.l.filter(l => l.employee_id === st.u.employee_id).reduce((a,b)=>a+(b.point||0),0);
     document.getElementById('ingameScore').innerText = st.myPts.toLocaleString('th-TH');
+    document.getElementById('peakBanner').style.display='none';
+    const bb = document.getElementById('battleScoreBoardUI'); if(bb) bb.style.display='none';
+    const bp = document.getElementById('battleProgressUI'); if(bp) bp.style.display='none';
     nav('pgQuiz'); loadQ(vq);
 }
 
@@ -1265,7 +1268,7 @@ async function startBattleQuiz() {
                 if(hostSetupDone) return;
                 hostSetupDone = true;
                 await sb.from('battle_rooms').update({ q_locked_by: channelName }).eq('id', currentBattleRoomId);
-                const qPayload = { q_ids: battleQuestions.map(q=>q.id), seeds: battleShuffleSeeds };
+                const qPayload = { emp_id: st.u.employee_id, q_ids: battleQuestions.map(q=>q.id), seeds: battleShuffleSeeds };
                 battleChannel.send({type:'broadcast', event:'sync_q_set', payload: qPayload});
                 syncQSetRetryInterval = setInterval(() => {
                     if(!currentBattleRoomId || !battleChannel || !isBattleMode) { clearInterval(syncQSetRetryInterval); syncQSetRetryInterval = null; return; }
@@ -1292,7 +1295,7 @@ async function startBattleQuiz() {
                     createBattleChannel(data.q_locked_by);
                     battleChannel.subscribe((s2) => {
                         if(s2==='SUBSCRIBED') {
-                            setTimeout(() => { if(!hasReceivedQuestions && battleChannel && isBattleMode) battleChannel.send({type:'broadcast', event:'request_sync', payload:{}}); }, 2000);
+                            setTimeout(() => { if(!hasReceivedQuestions && battleChannel && isBattleMode) battleChannel.send({type:'broadcast', event:'request_sync', payload:{emp_id: st.u.employee_id}}); }, 2000);
                         }
                         if(s2==='CLOSED'||s2==='CHANNEL_ERROR') {
                             showConnToast(true);
@@ -1310,8 +1313,9 @@ async function startBattleQuiz() {
 }
 
 function createBattleChannel(chName) {
-    battleChannel = sb.channel(chName, { config: { broadcast: { self: false } } })
+    battleChannel = sb.channel(chName, { config: { broadcast: { self: true } } })
         .on('broadcast', { event: 'sync_q_set' }, payload => {
+            if(payload.payload.emp_id === st.u.employee_id) return;
             if(payload.payload.q_ids) {
                 if(!hasReceivedQuestions) {
                     battleQuestions = payload.payload.q_ids.map(id => st.q.find(q => q.id === id)).filter(Boolean);
@@ -1324,27 +1328,32 @@ function createBattleChannel(chName) {
                 }
             }
         })
-        .on('broadcast', { event: 'request_sync' }, () => {
+        .on('broadcast', { event: 'request_sync' }, payload => {
+            if(payload.payload.emp_id === st.u.employee_id) return;
             if(isBattleHost && battleQuestions.length > 0) {
-                const qPayload = { q_ids: battleQuestions.map(q=>q.id), seeds: battleShuffleSeeds };
+                const qPayload = { emp_id: st.u.employee_id, q_ids: battleQuestions.map(q=>q.id), seeds: battleShuffleSeeds };
                 battleChannel.send({type:'broadcast', event:'sync_q_set', payload: qPayload});
             }
         })
-        .on('broadcast', { event: 'sync_q_ack' }, () => {
+        .on('broadcast', { event: 'sync_q_ack' }, payload => {
+            if(payload.payload.emp_id === st.u.employee_id) return;
             if(isBattleHost) { if(syncQSetRetryInterval) { clearInterval(syncQSetRetryInterval); syncQSetRetryInterval = null; } if(!battleLoadQCalled) battleLoadQ(); }
         })
         .on('broadcast', { event: 'ready_for_q' }, payload => {
+            if(payload.payload.emp_id === st.u.employee_id) return;
             if(payload.payload.q_idx === battleIndex) { oppReadyForQ = true; tryStartQuestionTimer(); }
         })
         .on('broadcast', { event: 'start_timer' }, payload => {
             if(payload.payload.q_idx === battleIndex && !timerRunning) startQuestionTimer();
         })
         .on('broadcast', { event: 'score_update' }, payload => {
+            if(payload.payload.emp_id === st.u.employee_id) return;
             if(payload.payload.gameScore !== undefined) { battleOppGameScore = payload.payload.gameScore; const osd = document.getElementById('oppBattleScoreDisplay'); if(osd) osd.innerText = battleOppGameScore.toLocaleString('th-TH'); updateLiveScoreBar(); }
             if(payload.payload.correct !== undefined) battleOppCorrect = payload.payload.correct;
             if(payload.payload.totalTime !== undefined) battleOppTotalTime = payload.payload.totalTime;
         })
         .on('broadcast', { event: 'opponent_answered' }, payload => {
+            if(payload.payload.emp_id === st.u.employee_id) return;
             if(payload.payload.q_idx === battleIndex && !oppAnsweredThisQ) {
                 oppAnsweredThisQ = true; oppAnswerTimeThisQ = parseFloat(payload.payload.time_sec || 0) * 1000; oppCorrectThisQ = payload.payload.is_correct;
                 if(battleQHistory[payload.payload.q_idx]) { battleQHistory[payload.payload.q_idx].oppTime = oppAnswerTimeThisQ; battleQHistory[payload.payload.q_idx].oppCorrect = payload.payload.is_correct; if(payload.payload.is_correct && payload.payload.rank === 1) { battleQHistory[payload.payload.q_idx].winner = 'opp'; battleQHistory[payload.payload.q_idx].oppScore = 100 + calcSpeedBonus(oppAnswerTimeThisQ); } }
@@ -1353,12 +1362,17 @@ function createBattleChannel(chName) {
             }
         })
         .on('broadcast', { event: 'opponent_left' }, payload => {
+            if(payload.payload.emp_id === st.u.employee_id) return;
             if(battleHeartbeatInterval) clearInterval(battleHeartbeatInterval);
             let r = 0; if(battleIndex >= 5) r = 2000; else if(battleIndex >= 3) r = 500;
             showAlert(r > 0 ? 'คู่แข่งออกไป! +' + r + ' pt' : 'คู่แข่งออกไป', 'ชนะผ่าน!', 'fa-trophy', 'var(--agri-green)', () => showBattleResult(true, true, r));
         })
-        .on('broadcast', { event: 'heartbeat' }, payload => { lastOppHeartbeat = Date.now(); })
+        .on('broadcast', { event: 'heartbeat' }, payload => { 
+            if(payload.payload.emp_id === st.u.employee_id) return;
+            lastOppHeartbeat = Date.now(); 
+        })
         .on('broadcast', { event: 'battle_end_scores' }, payload => {
+            if(payload.payload.emp_id === st.u.employee_id) return;
             battleOppCorrect = payload.payload.correct; if(payload.payload.gameScore !== undefined) battleOppGameScore = payload.payload.gameScore; if(payload.payload.totalTime !== undefined) battleOppTotalTime = payload.payload.totalTime;
         });
 }
@@ -1368,13 +1382,11 @@ let timerRunning = false, hostSetupDone = false;
 
 function tryStartQuestionTimer() {
     if(!myReadyForQ || !oppReadyForQ || timerRunning) return;
-    // ทั้ง Host และ P2: ถ้าทั้งคู่ ready แล้ว → Host ส่ง start_timer, P2 เริ่มเลย
     myReadyForQ = false; oppReadyForQ = false;
     if(forceStartTimeout) { clearTimeout(forceStartTimeout); forceStartTimeout = null; }
     if(isBattleHost && battleChannel) {
-        battleChannel.send({type:'broadcast', event:'start_timer', payload:{q_idx: battleIndex}});
+        battleChannel.send({type:'broadcast', event:'start_timer', payload:{emp_id: st.u.employee_id, q_idx: battleIndex}});
     }
-    startQuestionTimer();
 }
 
 function startQuestionTimer() {
@@ -1452,13 +1464,13 @@ function battleLoadQ() {
     if(battleChannel) battleChannel.send({type:'broadcast', event:'ready_for_q', payload:{emp_id: st.u.employee_id, q_idx: battleIndex}});
     tryStartQuestionTimer();
 
-    // FIX BUG #2: forceStart 3 วินาทีแทน 5 — ลด delay ข้อแรก
+    // FIX BUG #2: forceStart delay to safeguard lagging clients
     forceStartTimeout = setTimeout(() => {
         if(!timerRunning && isAnswering && isBattleMode) {
-            if(battleChannel) battleChannel.send({type:'broadcast', event:'start_timer', payload:{q_idx: battleIndex}});
-            startQuestionTimer();
+            if(isBattleHost && battleChannel) battleChannel.send({type:'broadcast', event:'start_timer', payload:{emp_id: st.u.employee_id, q_idx: battleIndex}});
+            else startQuestionTimer();
         }
-    }, 3000);
+    }, 9000);
 }
 
 function battleAdvanceQ(wasCorrect) {
