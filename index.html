@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Vget GREAT by Human Resources Development</title>
+    <title>get GREAT by Human Resources Development</title>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <link
@@ -3313,7 +3313,8 @@
                     battleQHistory[battleIndex] = Object.assign(battleQHistory[battleIndex] || {}, { myScore: 0, myTime: timeTaken, myCorrect: false });
                 }
                 if (battleChannel) {
-                    battleChannel.send({ type: 'broadcast', event: 'opponent_answered', payload: { emp_id: st.u.employee_id, q_idx: battleIndex, time_sec: timeSec, is_correct: isRight, rank: myRank, gameScore: battleMyGameScore, correct: battleMyCorrect, totalTime: battleMyTotalTime } });
+                    battleChannel.send({ type: 'broadcast', event: 'score_update', payload: { emp_id: st.u.employee_id, gameScore: battleMyGameScore, correct: battleMyCorrect, totalTime: battleMyTotalTime } });
+                    battleChannel.send({ type: 'broadcast', event: 'opponent_answered', payload: { emp_id: st.u.employee_id, q_idx: battleIndex, time_sec: timeSec, is_correct: isRight, rank: myRank } });
                 }
                 if (!oppAnsweredThisQ) {
                     const toast = document.getElementById('oppAnswerToast'); 
@@ -3721,12 +3722,12 @@
             lastOppHeartbeat = Date.now();
             battleHeartbeatInterval = setInterval(() => {
                 if (battleChannel) try { battleChannel.send({ type: 'broadcast', event: 'heartbeat', payload: { emp_id: st.u.employee_id } }); } catch (e) { }
-                if (Date.now() - lastOppHeartbeat > 25000 && isBattleMode && battleIndex < BATTLE_Q_COUNT) {
+                if (Date.now() - lastOppHeartbeat > 30000 && isBattleMode && battleIndex < BATTLE_Q_COUNT) {
                     let dcReward = 0; if (battleIndex >= 5) dcReward = 2000; else if (battleIndex >= 3) dcReward = 500;
                     showAlert('คู่ต่อสู้หลุดการเชื่อมต่อ!', 'หลุดการเชื่อมต่อ', 'fa-wifi', 'var(--agri-green)', () => showBattleResult(true, true, dcReward));
                     clearInterval(battleHeartbeatInterval); battleHeartbeatInterval = null;
                 }
-            }, 8000);
+            }, 3000);
 
             if (isBattleHost) {
                 const vq = st.q.filter(q => q.is_active !== false);
@@ -3815,13 +3816,17 @@
                     if (payload.payload.emp_id === st.u.employee_id) return;
                     if (payload.payload.q_idx === battleIndex) { oppReadyForQ = true; tryStartQuestionTimer(); }
                 })
-                .on('broadcast', { event: 'opponent_answered' }, payload => {
+                .on('broadcast', { event: 'start_timer' }, payload => {
+                    if (payload.payload.q_idx === battleIndex && !timerRunning) startQuestionTimer();
+                })
+                .on('broadcast', { event: 'score_update' }, payload => {
                     if (payload.payload.emp_id === st.u.employee_id) return;
-                    
                     if (payload.payload.gameScore !== undefined) { battleOppGameScore = payload.payload.gameScore; const osd = document.getElementById('oppBattleScoreDisplay'); if (osd) osd.innerText = battleOppGameScore.toLocaleString('th-TH'); updateLiveScoreBar(); }
                     if (payload.payload.correct !== undefined) battleOppCorrect = payload.payload.correct;
                     if (payload.payload.totalTime !== undefined) battleOppTotalTime = payload.payload.totalTime;
-
+                })
+                .on('broadcast', { event: 'opponent_answered' }, payload => {
+                    if (payload.payload.emp_id === st.u.employee_id) return;
                     if (payload.payload.q_idx === battleIndex && !oppAnsweredThisQ) {
                         oppAnsweredThisQ = true; oppAnswerTimeThisQ = parseFloat(payload.payload.time_sec || 0) * 1000; oppCorrectThisQ = payload.payload.is_correct;
                         if (battleQHistory[payload.payload.q_idx]) { battleQHistory[payload.payload.q_idx].oppTime = oppAnswerTimeThisQ; battleQHistory[payload.payload.q_idx].oppCorrect = payload.payload.is_correct; if (payload.payload.is_correct && payload.payload.rank === 1) { battleQHistory[payload.payload.q_idx].winner = 'opp'; battleQHistory[payload.payload.q_idx].oppScore = 100 + calcSpeedBonus(oppAnswerTimeThisQ); } }
@@ -3857,7 +3862,9 @@
             if (!myReadyForQ || !oppReadyForQ || timerRunning) return;
             myReadyForQ = false; oppReadyForQ = false;
             if (forceStartTimeout) { clearTimeout(forceStartTimeout); forceStartTimeout = null; }
-            startQuestionTimer();
+            if (isBattleHost && battleChannel) {
+                battleChannel.send({ type: 'broadcast', event: 'start_timer', payload: { emp_id: st.u.employee_id, q_idx: battleIndex } });
+            }
         }
 
         function startQuestionTimer() {
@@ -3938,7 +3945,8 @@
             // FIX BUG #2: forceStart delay to safeguard lagging clients
             forceStartTimeout = setTimeout(() => {
                 if (!timerRunning && isAnswering && isBattleMode) {
-                    startQuestionTimer();
+                    if (isBattleHost && battleChannel) battleChannel.send({ type: 'broadcast', event: 'start_timer', payload: { emp_id: st.u.employee_id, q_idx: battleIndex } });
+                    else startQuestionTimer();
                 }
             }, 9000);
         }
