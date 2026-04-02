@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>V.7 get GREAT by Human Resources Development</title>
+    <title>get GREAT by Human Resources Development</title>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <link
@@ -3285,6 +3285,10 @@
                     battleResults[battleIndex] = 'error';
                     battleQHistory[battleIndex] = Object.assign(battleQHistory[battleIndex] || {}, { myScore: 0, myTime: timeTaken, myCorrect: false });
                     if (battleChannel) { battleChannel.send({ type: 'broadcast', event: 'opponent_answered', payload: { emp_id: st.u.employee_id, q_idx: battleIndex, time_sec: (timeTaken / 1000).toFixed(1), is_correct: false, rank: 0 } }); }
+                    if (!oppAnsweredThisQ) {
+                        const toast = document.getElementById('oppAnswerToast'); 
+                        if (toast) { toast.innerText = '⏳ กำลังรอคู่แข่งตอบ...'; toast.style.background = 'rgba(0,0,0,0.8)'; toast.classList.add('show'); }
+                    }
                     checkBothAnsweredAndAdvance(); return;
                 }
                 const isRight = data.is_correct; const qScore = data.points || 0; const myRank = data.rank || 0; const timeSec = (timeTaken / 1000).toFixed(1);
@@ -3311,6 +3315,10 @@
                 if (battleChannel) {
                     battleChannel.send({ type: 'broadcast', event: 'score_update', payload: { emp_id: st.u.employee_id, gameScore: battleMyGameScore, correct: battleMyCorrect, totalTime: battleMyTotalTime } });
                     battleChannel.send({ type: 'broadcast', event: 'opponent_answered', payload: { emp_id: st.u.employee_id, q_idx: battleIndex, time_sec: timeSec, is_correct: isRight, rank: myRank } });
+                }
+                if (!oppAnsweredThisQ) {
+                    const toast = document.getElementById('oppAnswerToast'); 
+                    if (toast) { toast.innerText = '⏳ กำลังรอคู่แข่งตอบ...'; toast.style.background = 'rgba(0,0,0,0.8)'; toast.classList.add('show'); }
                 }
                 checkBothAnsweredAndAdvance(); return;
             }
@@ -3822,7 +3830,12 @@
                     if (payload.payload.q_idx === battleIndex && !oppAnsweredThisQ) {
                         oppAnsweredThisQ = true; oppAnswerTimeThisQ = parseFloat(payload.payload.time_sec || 0) * 1000; oppCorrectThisQ = payload.payload.is_correct;
                         if (battleQHistory[payload.payload.q_idx]) { battleQHistory[payload.payload.q_idx].oppTime = oppAnswerTimeThisQ; battleQHistory[payload.payload.q_idx].oppCorrect = payload.payload.is_correct; if (payload.payload.is_correct && payload.payload.rank === 1) { battleQHistory[payload.payload.q_idx].winner = 'opp'; battleQHistory[payload.payload.q_idx].oppScore = 100 + calcSpeedBonus(oppAnswerTimeThisQ); } }
-                        const toast = document.getElementById('oppAnswerToast'); if (toast) { toast.innerText = (payload.payload.is_correct ? '✅' : '❌') + ' คู่แข่งตอบแล้ว (' + payload.payload.time_sec + ' วิ)'; toast.classList.add('show'); setTimeout(() => toast.classList.remove('show'), 3000); }
+                        const toast = document.getElementById('oppAnswerToast'); 
+                        if (toast) { 
+                            toast.innerText = (payload.payload.is_correct ? '✅' : '❌') + ' คู่แข่งตอบแล้ว (' + payload.payload.time_sec + ' วิ)'; 
+                            toast.style.background = 'rgba(59, 130, 246, 0.9)';
+                            toast.classList.add('show'); 
+                        }
                         checkBothAnsweredAndAdvance();
                     }
                 })
@@ -3921,8 +3934,8 @@
             isAnswering = true;
             document.getElementById('qArea').innerHTML = `
         <div style="text-align:center; padding: 40px; animation: pulse 1.5s infinite;">
-            <i class="fas fa-spinner fa-spin" style="font-size:40px; color:var(--gold); margin-bottom:15px;"></i>
-            <div style="font-size:16px; color:var(--text-muted); letter-spacing:1px;">รอเริ่มเกม...</div>
+            <i class="fas fa-spinner fa-spin" style="font-size:40px; color:var(--text-dim); margin-bottom:15px;"></i>
+            <div style="font-size:16px; color:var(--text-muted); letter-spacing:1px;">รอเริ่มข้อถัดไปพร้อมกัน...</div>
         </div>`;
 
             myReadyForQ = true;
@@ -3952,7 +3965,7 @@
                 if (shouldFinish) { finishBattle(); return; }
                 if (!isBattleMode) return; // ถ้า exit แล้วจริงๆ ก็หยุด
                 battleLoadQ();
-            }, 600);
+            }, 50);
         }
 
         function checkBothAnsweredAndAdvance() { if (myAnsweredThisQ && oppAnsweredThisQ && !isAdvancingQ) battleAdvanceQ(false); }
