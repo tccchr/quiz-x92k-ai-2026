@@ -4,6 +4,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="HandheldFriendly" content="true" />
     <title>get GREAT by Human Resources Development</title>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -49,6 +50,7 @@
             outline: none;
             margin: 0;
             padding: 0;
+            touch-action: manipulation;
         }
 
         body {
@@ -3085,6 +3087,33 @@
     </div>
 
     <script>
+        // =============================================================================
+        // 🚫 BLOCK ALL ZOOM: double-tap, pinch, keyboard zoom
+        // =============================================================================
+        
+        // 1. Block double-tap zoom
+        let lastTouchEnd = 0;
+        document.addEventListener('touchend', function(e) {
+            const now = Date.now();
+            if(now - lastTouchEnd <= 300) { e.preventDefault(); }
+            lastTouchEnd = now;
+        }, { passive: false });
+
+        // 2. Block pinch zoom
+        document.addEventListener('touchmove', function(e) {
+            if(e.touches.length > 1) { e.preventDefault(); }
+        }, { passive: false });
+
+        // 3. Block Ctrl+/Ctrl- keyboard zoom
+        document.addEventListener('keydown', function(e) {
+            if((e.ctrlKey || e.metaKey) && (e.key === '+' || e.key === '-' || e.key === '=' || e.key === '0')) { e.preventDefault(); }
+        });
+
+        // 4. Block gesture zoom (Safari)
+        document.addEventListener('gesturestart', function(e) { e.preventDefault(); });
+        document.addEventListener('gesturechange', function(e) { e.preventDefault(); });
+        document.addEventListener('gestureend', function(e) { e.preventDefault(); });
+
         // =============================================================================
         // 🔧 FIXED VERSION — All 10 Realtime issues resolved
         // =============================================================================
