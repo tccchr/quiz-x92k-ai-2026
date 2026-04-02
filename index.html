@@ -4,8 +4,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <meta name="HandheldFriendly" content="true" />
-    <title>get GREAT by Human Resources Development</title>
+    <title>V.8 get GREAT by Human Resources Development</title>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <link
@@ -50,7 +49,6 @@
             outline: none;
             margin: 0;
             padding: 0;
-            touch-action: manipulation;
         }
 
         body {
@@ -2891,6 +2889,9 @@
                     style="flex:1; background: linear-gradient(135deg, #3B82F6, #1E40AF); box-shadow: 0 8px 30px rgba(59, 130, 246, 0.4);"
                     onclick="enterBattleQueue()"><i class="fas fa-khanda"></i> Battle</button>
             </div>
+            <div style="max-width:500px; margin:8px auto 0; padding:0 20px;">
+                <button class="btn-modern" style="width:100%; background:transparent; border:1px solid rgba(59,130,246,0.3); box-shadow:none; color:#60A5FA; padding:12px; font-size:14px;" onclick="showBattleHistory()"><i class="fas fa-history"></i> ประวัติการแข่งขัน</button>
+            </div>
         </div>
     </div>
 
@@ -3035,6 +3036,36 @@
     </div>
 
     <div id="pgAdmin" class="page-container">
+
+    <!-- ===== BATTLE HISTORY PAGE ===== -->
+    <div id="pgBattleHistory" class="page-container">
+        <div style="min-height:100vh; padding:20px 16px; max-width:600px; margin:0 auto;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                <h2 style="color:white; font-size:22px; font-weight:800; font-family:Outfit;"><i class="fas fa-history" style="color:#60A5FA;"></i> ประวัติ Battle</h2>
+                <button class="btn-modern" style="width:auto; padding:10px 20px; background:transparent; border:1px solid var(--text-dim); box-shadow:none; color:var(--text-secondary); font-size:13px;" onclick="nav('pgMain')"><i class="fas fa-arrow-left"></i> กลับ</button>
+            </div>
+            <div style="display:flex; gap:10px; margin-bottom:20px;">
+                <div style="flex:1; background:rgba(16,185,129,0.1); border:1px solid rgba(16,185,129,0.3); border-radius:14px; padding:14px; text-align:center;">
+                    <div style="font-size:28px; font-weight:800; color:var(--agri-green);" id="histWins">0</div>
+                    <div style="font-size:12px; color:var(--text-muted);">ชนะ</div>
+                </div>
+                <div style="flex:1; background:rgba(220,38,38,0.1); border:1px solid rgba(220,38,38,0.3); border-radius:14px; padding:14px; text-align:center;">
+                    <div style="font-size:28px; font-weight:800; color:var(--mc-red-light);" id="histLosses">0</div>
+                    <div style="font-size:12px; color:var(--text-muted);">แพ้</div>
+                </div>
+                <div style="flex:1; background:rgba(59,130,246,0.1); border:1px solid rgba(59,130,246,0.3); border-radius:14px; padding:14px; text-align:center;">
+                    <div style="font-size:28px; font-weight:800; color:#60A5FA;" id="histWinRate">0%</div>
+                    <div style="font-size:12px; color:var(--text-muted);">Win Rate</div>
+                </div>
+            </div>
+            <div style="color:var(--text-muted); font-size:12px; margin-bottom:12px;">📅 สัปดาห์นี้ (ล่าสุด 30 แมตช์)</div>
+            <div id="histList" style="display:flex; flex-direction:column; gap:10px;"></div>
+            <div id="histEmpty" style="display:none; text-align:center; padding:40px; color:var(--text-muted);">
+                <i class="fas fa-ghost" style="font-size:40px; margin-bottom:15px; opacity:0.3;"></i>
+                <div>ยังไม่มีประวัติการแข่งขัน</div>
+            </div>
+        </div>
+    </div>
         <div class="admin-p">
             <div class="adm-h">
                 <h2><i class="fas fa-shield-alt"></i> ผู้ดูแลระบบ</h2><button class="btn-sm bg-red"
@@ -3087,33 +3118,6 @@
     </div>
 
     <script>
-        // =============================================================================
-        // 🚫 ANTI-ZOOM: ไม่บล็อคการกด แต่ถ้าซูมเมื่อไหร่ reset กลับทันที
-        // =============================================================================
-        
-        // วิธีนี้ไม่บล็อค touch event ใดๆ เลย — กดรัวได้เต็มที่
-        // แค่คอยจับว่า visualViewport scale เปลี่ยนหรือเปล่า ถ้าเปลี่ยน → reset
-        if(window.visualViewport) {
-            window.visualViewport.addEventListener('resize', () => {
-                if(window.visualViewport.scale !== 1) {
-                    document.body.style.transform = 'scale(1)';
-                    document.body.style.transformOrigin = '0 0';
-                    // Force reset zoom ผ่าน meta viewport trick
-                    const vp = document.querySelector('meta[name="viewport"]');
-                    vp.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
-                }
-            });
-        }
-
-        // Pinch zoom block (2+ fingers เท่านั้น — ไม่กระทบ single tap)
-        document.addEventListener('touchmove', function(e) {
-            if(e.touches.length > 1) e.preventDefault();
-        }, { passive: false });
-
-        // Safari gesture zoom block
-        document.addEventListener('gesturestart', function(e) { e.preventDefault(); }, { passive: false });
-        document.addEventListener('gesturechange', function(e) { e.preventDefault(); }, { passive: false });
-
         // =============================================================================
         // 🔧 FIXED VERSION — All 10 Realtime issues resolved
         // =============================================================================
@@ -4095,6 +4099,50 @@
                 myGrid.innerHTML = '<div style="grid-column:1/-1;font-size:11px;color:#60A5FA;font-weight:700;margin-bottom:4px;">🔵 ' + (battleMyInfo?.name || 'ฉัน') + '</div>' + myHtml;
                 oppGrid.innerHTML = '<div style="grid-column:1/-1;font-size:11px;color:#F87171;font-weight:700;margin-bottom:4px;">🔴 ' + (battleOppInfo?.name || 'คู่แข่ง') + '</div>' + oppHtml;
             } catch (e) { }
+        }
+
+        // ===== BATTLE HISTORY =====
+        async function showBattleHistory() {
+            nav('pgBattleHistory');
+            const list = document.getElementById('histList');
+            const empty = document.getElementById('histEmpty');
+            list.innerHTML = '<div style="text-align:center; padding:30px; color:var(--text-muted);"><i class="fas fa-spinner fa-spin" style="font-size:24px;"></i><div style="margin-top:10px;">กำลังโหลด...</div></div>';
+            empty.style.display = 'none';
+            try {
+                const { data, error } = await sb.rpc('get_battle_history', { p_emp_id: String(st.u.employee_id) });
+                if(error || !data || data.length === 0) { list.innerHTML = ''; empty.style.display = 'block'; document.getElementById('histWins').innerText = '0'; document.getElementById('histLosses').innerText = '0'; document.getElementById('histWinRate').innerText = '0%'; return; }
+                // นับแค่เกมที่มีคะแนน (ไม่นับเกมที่ทั้งคู่ 0-0)
+                const played = data.filter(m => m.my_score > 0 || m.opp_score > 0);
+                const wins = played.filter(m => m.won).length;
+                const losses = played.filter(m => !m.won).length;
+                document.getElementById('histWins').innerText = wins;
+                document.getElementById('histLosses').innerText = losses;
+                document.getElementById('histWinRate').innerText = played.length > 0 ? Math.round(wins / played.length * 100) + '%' : '0%';
+                list.innerHTML = data.map(m => {
+                    const isWin = m.won && (m.my_score > 0 || m.opp_score > 0);
+                    const isDraw = m.my_score === 0 && m.opp_score === 0;
+                    const borderColor = isDraw ? 'rgba(255,255,255,0.1)' : (isWin ? 'rgba(16,185,129,0.4)' : 'rgba(220,38,38,0.4)');
+                    const bgColor = isDraw ? 'rgba(255,255,255,0.03)' : (isWin ? 'rgba(16,185,129,0.06)' : 'rgba(220,38,38,0.06)');
+                    const badge = isDraw ? '<span style="color:var(--text-muted); font-size:11px;">⚪ ไม่สมบูรณ์</span>' : (isWin ? '<span style="color:var(--agri-green); font-size:11px;">🏆 ชนะ</span>' : '<span style="color:var(--mc-red-light); font-size:11px;">💀 แพ้</span>');
+                    return `<div style="background:${bgColor}; border:1px solid ${borderColor}; border-radius:14px; padding:14px 16px; display:flex; align-items:center; gap:14px;">
+                        <div style="width:44px; height:44px; border-radius:50%; background:rgba(255,255,255,0.08); display:flex; align-items:center; justify-content:center; font-size:18px; font-weight:800; color:white; flex-shrink:0;">${(m.opp_name||'?').charAt(0)}</div>
+                        <div style="flex:1; min-width:0;">
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <div style="font-weight:700; color:white; font-size:15px;">${m.opp_name||'ไม่ทราบ'}</div>
+                                ${badge}
+                            </div>
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:4px;">
+                                <div style="font-size:12px; color:var(--text-muted);">${m.opp_site||''} · ${m.opp_tier||''}</div>
+                                <div style="font-size:12px; color:var(--text-dim);">${m.date||''}</div>
+                            </div>
+                            <div style="display:flex; gap:16px; margin-top:8px; font-size:13px;">
+                                <div style="color:${isWin ? 'var(--agri-green)' : 'var(--mc-red-light)'}; font-weight:700;">${m.my_score} <span style="color:var(--text-dim); font-weight:400;">vs</span> ${m.opp_score}</div>
+                                <div style="color:var(--text-muted);">ถูก ${m.my_correct}/10 · คู่แข่ง ${m.opp_correct}/10</div>
+                            </div>
+                        </div>
+                    </div>`;
+                }).join('');
+            } catch(e) { list.innerHTML = ''; empty.style.display = 'block'; console.error('History error:', e); }
         }
 
         async function exitBattleResult() {
