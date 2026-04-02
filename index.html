@@ -3596,6 +3596,7 @@
         let forceStartTimeout = null;
         // 🔧 FIX #10: prevent double finalize
         let battleFinalized = false;
+        let isMatchFoundTriggered = false;
 
         // --- CLEANUP HELPER (FIX #8/#9: centralized cleanup) ---
         function cleanupAllBattleTimers() {
@@ -3629,6 +3630,7 @@
             if (!st.canPlay) return;
             if (Date.now() < battleCooldownUntil) { showAlert('กรุณารอ ' + Math.ceil((battleCooldownUntil - Date.now()) / 1000) + ' วินาที', 'รอสักครู่', 'fa-hourglass-half'); return; }
             nav('pgBattleQueue'); queueSeconds = 0;
+            isMatchFoundTriggered = false;
             document.getElementById('queueTimerStr').innerText = "00:00";
             st.myPts = st.l.filter(l => l.employee_id === st.u.employee_id).reduce((a, b) => a + (b.point || 0), 0);
             const myRank = getRankInfo(st.myPts || 0);
@@ -3640,6 +3642,10 @@
             currentBattleRoomId = res.room_id;
             if (res.status === 'matched') {
                 isBattleHost = false;
+                if (!battleChannel) battleChannel = sb.channel('queue_' + currentBattleRoomId);
+                battleChannel.subscribe((status) => {
+                    if (status === 'SUBSCRIBED') { battleChannel.send({ type: 'broadcast', event: 'guest_joined', payload: { p2_info: battleMyInfo } }); }
+                });
                 triggerMatchFound(battleMyInfo, res.opp_info);
             } else if (res.status === 'matched_as_host') {
                 isBattleHost = true;
@@ -3650,7 +3656,11 @@
                 battleChannel = sb.channel('queue_' + currentBattleRoomId)
                     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'battle_rooms', filter: 'id=eq.' + currentBattleRoomId },
                         payload => { if (payload.new.status === 'playing') { isBattleHost = true; triggerMatchFound(battleMyInfo, payload.new.p2_info); } }
-                    ).subscribe();
+                    )
+                    .on('broadcast', { event: 'guest_joined' }, payload => {
+                        isBattleHost = true; triggerMatchFound(battleMyInfo, payload.payload.p2_info);
+                    })
+                    .subscribe();
 
                 queueTimer = setInterval(async () => {
                     queueSeconds++;
@@ -3664,6 +3674,10 @@
                                 // จับคู่ได้แล้ว! room_id อาจเปลี่ยน (เราเข้าห้องคนอื่น)
                                 currentBattleRoomId = reMatch.room_id;
                                 isBattleHost = false;
+                                if (!battleChannel) battleChannel = sb.channel('queue_' + currentBattleRoomId);
+                                battleChannel.subscribe((status) => {
+                                    if (status === 'SUBSCRIBED') { battleChannel.send({ type: 'broadcast', event: 'guest_joined', payload: { p2_info: battleMyInfo } }); }
+                                });
                                 triggerMatchFound(battleMyInfo, reMatch.opp_info);
                                 return;
                             } else if (reMatch && reMatch.status === 'matched_as_host') {
@@ -3679,7 +3693,11 @@
                                 battleChannel = sb.channel('queue_' + currentBattleRoomId)
                                     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'battle_rooms', filter: 'id=eq.' + currentBattleRoomId },
                                         payload => { if (payload.new.status === 'playing') { isBattleHost = true; triggerMatchFound(battleMyInfo, payload.new.p2_info); } }
-                                    ).subscribe();
+                                    )
+                                    .on('broadcast', { event: 'guest_joined' }, payload => {
+                                        isBattleHost = true; triggerMatchFound(battleMyInfo, payload.payload.p2_info);
+                                    })
+                                    .subscribe();
                             }
                         } catch (e) { }
                     }
@@ -3714,6 +3732,8 @@
         }
 
         function triggerMatchFound(myInfo, opponentInfo) {
+            if (isMatchFoundTriggered) return;
+            isMatchFoundTriggered = true;
             cleanupAllBattleTimers();
             playSound('match');
             battleOppInfo = opponentInfo;
