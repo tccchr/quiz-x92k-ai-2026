@@ -1,7 +1,7 @@
 <!DOCTYPE html><html lang="th"><head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
-  <title>get AI by Human Resources Development</title>
+  <title>get GREAT by Human Resources Development</title>
   
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=Kanit:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
@@ -589,7 +589,7 @@
         <div class="result-breakdown" id="resultBreakdown"><div class="rb-title">📊 สรุปแต่ละข้อ</div><div class="rb-grid" id="rbMyGrid"></div><div class="rb-grid" id="rbOppGrid"></div><div class="rb-legend"><span><div class="dot" style="background:var(--agri-green);"></div> ชนะ</span><span><div class="dot" style="background:var(--mc-red);"></div> แพ้/ผิด</span><span><div class="dot" style="background:var(--gold);"></div> ทั้งคู่ไม่ได้แต้ม</span></div></div>
         <div class="result-rewards" id="resultRewards"><div class="rw-row" style="justify-content: center; gap: 10px;"><span class="rw-label" style="font-size: 16px;">รางวัลจากการดวล:</span><span class="rw-val" id="resultEarnedPts" style="color:var(--gold); font-size: 20px;">+0</span></div></div>
         <div class="result-buttons" style="flex-direction:column; gap:10px;">
-            <button class="btn-modern" id="btnRematch" style="background:linear-gradient(135deg, #3B82F6, #1E40AF); box-shadow:0 8px 30px rgba(59,130,246,0.4); padding:16px;" onclick="requestRematch()"><i class="fas fa-redo"></i> แข่งอีกรอบ</button>
+            <!-- Rematch removed -->
             <button class="btn-modern" style="background:transparent; border:2px solid var(--text-dim); box-shadow:none; color:var(--text-secondary); padding:16px;" onclick="exitBattleResult()"><i class="fas fa-home"></i> กลับหน้าหลัก</button>
         </div>
     </div>
@@ -1148,8 +1148,7 @@ async function enterBattleQueue() {
                 const { data: cr } = await sb.from('battle_rooms').select('status, p2_info').eq('id', currentBattleRoomId).single();
                 if(cr && cr.status === 'playing' && cr.p2_info) triggerMatchFound(battleMyInfo, cr.p2_info);
             }
-            if(queueSeconds === 90) { const { data: oppInfo } = await sb.rpc('expand_matchmaker', { p_room_id: currentBattleRoomId, p_emp_id: st.u.employee_id, p_info: battleMyInfo }); if(oppInfo) { isBattleHost = false; triggerMatchFound(battleMyInfo, oppInfo); } }
-            if(queueSeconds >= 180) { showAlert('ไม่มีคู่ต่อสู้ขณะนี้', 'คิวว่าง!', 'fa-user-clock'); cancelBattleQueue(); }
+            if(queueSeconds >= 60) { showAlert('ไม่มีคู่ต่อสู้ขณะนี้', 'คิวว่าง!', 'fa-user-clock'); cancelBattleQueue(); }
         }, 1000);
         showRandomTrivia(); triviaTimer = setInterval(showRandomTrivia, 4500);
     }
@@ -1190,22 +1189,19 @@ function triggerMatchFound(myInfo, opponentInfo) {
     setTimeout(() => startBattleQuiz(), 3500);
 }
 
-
 // =============================================================================
-// ⚔️ BATTLE MODE — PRODUCTION v4 (All 6 bugs fixed)
+// ⚔️ BATTLE MODE v5 — Fixed: Timer, Channel, Matchmaking, No Rematch
 // =============================================================================
 async function startBattleQuiz() {
-    // === FULL STATE RESET (FIX BUG 1: ป้องกัน state เก่าหลุดมา) ===
     isBattleMode = true; st.s = 0; isAnswering = false;
     battleIndex = 0; battleMyCorrect = 0; battleOppCorrect = 0;
     battlePointsEarned = 0; battleFinalized = false;
     battleResults = []; battleQuestions = []; battleShuffleSeeds = [];
-    rematchRequested = false; rematchOppRequested = false;
     battleMyGameScore = 0; battleOppGameScore = 0;
     battleQHistory = []; battleMyTotalTime = 0; battleOppTotalTime = 0;
     hasReceivedQuestions = false; battleLoadQCalled = false;
     oppReadyForQ = false; myReadyForQ = false;
-    timerRunning = false; hostSetupDone = false; // FIX BUG 2,3,4
+    timerRunning = false; hostSetupDone = false;
 
     st.myPts = st.l.filter(l => l.employee_id === st.u.employee_id).reduce((a,b)=>a+(b.point||0),0);
     document.getElementById('ingameScore').innerText = (st.myPts||0).toLocaleString('th-TH');
@@ -1215,7 +1211,6 @@ async function startBattleQuiz() {
     const opAv=document.getElementById('blbOppAvatar'); if(opAv) opAv.innerText=(battleOppInfo?.name||'O').charAt(0);
     initBattleProgress();
 
-    // Cleanup queue channel (ชื่อ queue_ ไม่ซ้ำกับ game_)
     if(battleChannel) { try { await sb.removeChannel(battleChannel); } catch(e) {} battleChannel = null; }
 
     nav('pgQuiz');
@@ -1225,7 +1220,6 @@ async function startBattleQuiz() {
     document.getElementById('peakBanner').innerHTML='⚔️ SITE BATTLE MODE';
     showBattleWaitScreen("กำลังเตรียมสมรภูมิ...");
 
-    // Heartbeat
     lastOppHeartbeat = Date.now();
     battleHeartbeatInterval = setInterval(() => {
         if(battleChannel) try{battleChannel.send({type:'broadcast',event:'heartbeat',payload:{emp_id:st.u.employee_id}});}catch(e){}
@@ -1237,20 +1231,16 @@ async function startBattleQuiz() {
     }, 3000);
 
     if(isBattleHost) {
-        // ===== HOST: สร้างคำถาม + channel =====
         const vq = st.q.filter(q=>q.is_active!==false);
         battleQuestions = shuffle([...vq]).slice(0, BATTLE_Q_COUNT);
         battleShuffleSeeds = battleQuestions.map(()=>Math.floor(Math.random()*2147483646)+1);
         hasReceivedQuestions = true;
-
         const channelName = 'game_' + currentBattleRoomId + '_' + Date.now();
         createBattleChannel(channelName);
         battleChannel.subscribe(async (status) => {
             if(status === 'SUBSCRIBED') {
-                // FIX BUG 3: Guard — ทำ setup แค่ครั้งเดียว ไม่ว่า SUBSCRIBED จะ fire กี่ครั้ง
                 if(hostSetupDone) return;
                 hostSetupDone = true;
-                
                 await sb.from('battle_rooms').update({ q_locked_by: channelName }).eq('id', currentBattleRoomId);
                 const qPayload = { q_ids: battleQuestions.map(q=>q.id), seeds: battleShuffleSeeds };
                 battleChannel.send({type:'broadcast', event:'sync_q_set', payload: qPayload});
@@ -1269,7 +1259,6 @@ async function startBattleQuiz() {
             }
         });
     } else {
-        // ===== P2: Poll DB → subscribe Host channel ตรง (ไม่สร้าง temp channel) =====
         let attempts = 0;
         const poll = async () => {
             attempts++;
@@ -1294,11 +1283,9 @@ async function startBattleQuiz() {
     }
 }
 
-// === SHARED: สร้าง channel + event handlers ===
 function createBattleChannel(chName) {
     battleChannel = sb.channel(chName, { config: { broadcast: { self: false } } })
         .on('broadcast', { event: 'sync_q_set' }, payload => {
-            // FIX BUG 1: เช็ค hasReceivedQuestions ป้องกัน overwrite
             if(!hasReceivedQuestions && payload.payload.q_ids) {
                 battleQuestions = payload.payload.q_ids.map(id => st.q.find(q => q.id === id)).filter(Boolean);
                 battleShuffleSeeds = payload.payload.seeds || [];
@@ -1309,11 +1296,8 @@ function createBattleChannel(chName) {
                 }
             }
         })
-        .on('broadcast', { event: 'sync_q_ack' }, payload => {
-            if(isBattleHost) {
-                if(syncQSetRetryInterval) { clearInterval(syncQSetRetryInterval); syncQSetRetryInterval = null; }
-                if(!battleLoadQCalled) battleLoadQ();
-            }
+        .on('broadcast', { event: 'sync_q_ack' }, () => {
+            if(isBattleHost) { if(syncQSetRetryInterval) { clearInterval(syncQSetRetryInterval); syncQSetRetryInterval = null; } if(!battleLoadQCalled) battleLoadQ(); }
         })
         .on('broadcast', { event: 'ready_for_q' }, payload => {
             if(payload.payload.q_idx === battleIndex) { oppReadyForQ = true; tryStartQuestionTimer(); }
@@ -1342,17 +1326,11 @@ function createBattleChannel(chName) {
         .on('broadcast', { event: 'heartbeat' }, payload => { lastOppHeartbeat = Date.now(); })
         .on('broadcast', { event: 'battle_end_scores' }, payload => {
             battleOppCorrect = payload.payload.correct; if(payload.payload.gameScore !== undefined) battleOppGameScore = payload.payload.gameScore; if(payload.payload.totalTime !== undefined) battleOppTotalTime = payload.payload.totalTime;
-        })
-        .on('broadcast', { event: 'rematch_request' }, payload => {
-            rematchOppRequested = true; if(rematchRequested && rematchOppRequested) startRematch();
-            else { const rb = document.getElementById('btnRematch'); if(rb) { rb.innerHTML = '<i class="fas fa-redo"></i> คู่แข่งอยากแข่งอีก!'; rb.style.animation = 'pulseGold 1s infinite'; } }
         });
 }
 
-// === Per-question sync ===
 let oppReadyForQ = false, myReadyForQ = false, battleLoadQCalled = false;
-let timerRunning = false;     // FIX BUG 2,4: ป้องกัน double timer
-let hostSetupDone = false;    // FIX BUG 3: ป้องกัน SUBSCRIBED callback ซ้ำ
+let timerRunning = false, hostSetupDone = false;
 
 function tryStartQuestionTimer() {
     if(isBattleHost && myReadyForQ && oppReadyForQ && !timerRunning) {
@@ -1364,19 +1342,17 @@ function tryStartQuestionTimer() {
 }
 
 function startQuestionTimer() {
-    // FIX BUG 2,4: Guard — ถ้า timer รันอยู่แล้วไม่ทำซ้ำ
     if(timerRunning) return;
     timerRunning = true;
-    
     if(forceStartTimeout) { clearTimeout(forceStartTimeout); forceStartTimeout = null; }
     clearInterval(quizInterval); quizInterval = null;
     isAnswering = false;
     st.qStartTime = Date.now();
-
     const toast = document.getElementById('oppAnswerToast'); if(toast) toast.classList.remove('show');
     const tBar=document.getElementById('tBar'), panic=document.getElementById('panicOverlay'), countBox=document.getElementById('bigCountdown');
+    tBar.style.width='100%'; tBar.style.background='linear-gradient(90deg, var(--agri-green), var(--agri-green-light))';
+    panic.classList.remove('active'); countBox.classList.remove('urgent');
     let timeLeft = BATTLE_TIME_PER_Q;
-
     quizInterval = setInterval(() => {
         timeLeft -= 0.1;
         tBar.style.width = (timeLeft/BATTLE_TIME_PER_Q)*100+'%';
@@ -1385,8 +1361,7 @@ function startQuestionTimer() {
         if(timeLeft <= 0) {
             clearInterval(quizInterval); quizInterval = null;
             if(!myAnsweredThisQ) {
-                myAnsweredThisQ = true;
-                updateBattleProgress(battleIndex,'wrong');
+                myAnsweredThisQ = true; updateBattleProgress(battleIndex,'wrong');
                 battleResults[battleIndex] = 'timeout';
                 battleQHistory[battleIndex] = battleQHistory[battleIndex] || {};
                 battleQHistory[battleIndex].myScore = 0; battleQHistory[battleIndex].myTime = 8000; battleQHistory[battleIndex].myCorrect = false;
@@ -1399,17 +1374,13 @@ function startQuestionTimer() {
 function battleLoadQ() {
     battleLoadQCalled = true;
     if(battleIndex >= BATTLE_Q_COUNT || battleIndex >= battleQuestions.length) { finishBattle(); return; }
-    if(!hasReceivedQuestions || battleQuestions.length === 0) {
-        showBattleWaitScreen("กำลังรอข้อมูลคำถาม...");
-        return;
-    }
+    if(!hasReceivedQuestions || battleQuestions.length === 0) { showBattleWaitScreen("กำลังรอข้อมูลคำถาม..."); return; }
 
-    // Reset per-question state
     myAnsweredThisQ = false; oppAnsweredThisQ = false;
     myAnswerTimeThisQ = 0; oppAnswerTimeThisQ = 0;
     oppCorrectThisQ = false; isAdvancingQ = false;
     myReadyForQ = false; oppReadyForQ = false;
-    timerRunning = false; // FIX BUG 2: reset timer guard ทุกข้อ
+    timerRunning = false;
     battleQHistory[battleIndex] = { myScore:0, oppScore:0, myTime:0, oppTime:0, myCorrect:false, oppCorrect:false, winner:'none' };
 
     const ws = document.getElementById('battleWaitScreen'); if(ws) ws.style.display='none';
@@ -1425,7 +1396,7 @@ function battleLoadQ() {
     const seed = battleShuffleSeeds[battleIndex] || (battleIndex+1)*12345;
     const choiceOrder = seededShuffle([1,2,3,4], seed);
 
-    isAnswering = true; // Lock จนกว่า timer จะ start
+    isAnswering = true;
     document.getElementById('qArea').innerHTML = `
         <div style="text-align:center; animation: slideUpFade 0.4s ease;">
             <div style="font-size:13px; color:var(--text-muted); margin-bottom:8px; letter-spacing:2px;">ข้อ ${battleIndex+1} / ${BATTLE_Q_COUNT}</div>
@@ -1439,12 +1410,9 @@ function battleLoadQ() {
     if(battleChannel) battleChannel.send({type:'broadcast', event:'ready_for_q', payload:{emp_id: st.u.employee_id, q_idx: battleIndex}});
     tryStartQuestionTimer();
 
-    // FIX BUG 4,5: Force-start 5 วิ — แต่เช็ค timerRunning ก่อน
     forceStartTimeout = setTimeout(() => {
         if(!timerRunning && isAnswering && isBattleMode) {
-            if(isBattleHost && battleChannel) {
-                battleChannel.send({type:'broadcast', event:'start_timer', payload:{q_idx: battleIndex}});
-            }
+            if(isBattleHost && battleChannel) battleChannel.send({type:'broadcast', event:'start_timer', payload:{q_idx: battleIndex}});
             startQuestionTimer();
         }
     }, 5000);
@@ -1454,31 +1422,17 @@ function battleAdvanceQ(wasCorrect) {
     if(isAdvancingQ || !isBattleMode) return;
     isAdvancingQ = true;
     if(!wasCorrect && !battleResults[battleIndex]) battleResults[battleIndex]='miss';
-    clearInterval(quizInterval); quizInterval = null;
-    timerRunning = false; // Reset timer guard
-    setTimeout(() => {
-        if(!isBattleMode) return;
-        battleIndex++;
-        if(battleIndex >= BATTLE_Q_COUNT) { finishBattle(); return; }
-        battleLoadQ();
-    }, 600);
+    clearInterval(quizInterval); quizInterval = null; timerRunning = false;
+    setTimeout(() => { if(!isBattleMode) return; battleIndex++; if(battleIndex >= BATTLE_Q_COUNT) { finishBattle(); return; } battleLoadQ(); }, 600);
 }
 
-function checkBothAnsweredAndAdvance() {
-    if(myAnsweredThisQ && oppAnsweredThisQ && !isAdvancingQ) battleAdvanceQ(false);
-}
+function checkBothAnsweredAndAdvance() { if(myAnsweredThisQ && oppAnsweredThisQ && !isAdvancingQ) battleAdvanceQ(false); }
 
 async function finishBattle() {
-    if(!isBattleMode) return;
-    if(battleFinalized) return;
+    if(!isBattleMode || battleFinalized) return;
     battleFinalized = true;
-
-    // FIX BUG 3: หยุดทุกอย่างทันที
-    cleanupAllBattleTimers();
-    isAnswering = false; timerRunning = false;
-    
+    cleanupAllBattleTimers(); isAnswering = false; timerRunning = false;
     if(battleChannel) battleChannel.send({type:'broadcast',event:'battle_end_scores',payload:{emp_id:st.u.employee_id,correct:battleMyCorrect,gameScore:battleMyGameScore,totalTime:battleMyTotalTime}});
-
     setTimeout(async () => {
         try {
             const { data: dbResult } = await sb.rpc('finalize_battle', { p_room_id: currentBattleRoomId });
@@ -1487,30 +1441,21 @@ async function finishBattle() {
                 const isWin = (winnerId === String(st.u.employee_id));
                 for(const p of dbResult.players) { if(p.emp_id !== String(st.u.employee_id)) { battleOppGameScore = p.score || 0; battleOppCorrect = p.correct || 0; battleOppTotalTime = p.total_time || 0; } }
                 showBattleResult(isWin, false, isWin ? 2000 : 0);
-            } else {
-                showBattleResult(battleMyGameScore > battleOppGameScore, false, battleMyGameScore > battleOppGameScore ? 2000 : 0);
-            }
-        } catch(e) {
-            showBattleResult(battleMyGameScore > battleOppGameScore, false, battleMyGameScore > battleOppGameScore ? 2000 : 0);
-        }
+            } else { showBattleResult(battleMyGameScore > battleOppGameScore, false, battleMyGameScore > battleOppGameScore ? 2000 : 0); }
+        } catch(e) { showBattleResult(battleMyGameScore > battleOppGameScore, false, battleMyGameScore > battleOppGameScore ? 2000 : 0); }
     }, 2500);
 }
 
 async function showBattleResult(isWin, isTechWin, dcOverrideReward) {
-    isTechWin = isTechWin || false;
-    isBattleMode = false;
-    cleanupAllBattleTimers();
-    isAnswering = false; isAdvancingQ = true; timerRunning = false;
+    isTechWin = isTechWin || false; isBattleMode = false;
+    cleanupAllBattleTimers(); isAnswering = false; isAdvancingQ = true; timerRunning = false;
     const ws = document.getElementById('battleWaitScreen'); if(ws) ws.style.display='none';
     const toast = document.getElementById('oppAnswerToast'); if(toast) toast.classList.remove('show');
-
     if(isTechWin||isWin) playSound('win'); else playSound('lose');
-
     const crown=document.getElementById('resultCrown'), title=document.getElementById('resultTitle'), subtitle=document.getElementById('resultSubtitle');
-    if(isTechWin) { crown.innerText='🏆'; title.innerText='ชนะ Technical Win!'; title.style.color='var(--agri-green)'; const ra = dcOverrideReward || 0; subtitle.innerText = ra > 0 ? 'คู่แข่งออกไป คุณได้รับ +' + ra.toLocaleString('th-TH') + ' pt' : 'คู่แข่งออกไปก่อนเกมจะเริ่ม'; }
-    else if(isWin) { crown.innerText='👑'; title.innerText='ชัยชนะ!'; title.style.color='var(--gold)'; subtitle.innerText = 'คุณเอาชนะด้วยคะแนน ' + battleMyGameScore + ' ต่อ ' + battleOppGameScore; }
-    else { crown.innerText='💀'; title.innerText='พ่ายแพ้'; title.style.color='var(--mc-red-light)'; subtitle.innerText = 'คู่แข่งชนะด้วยคะแนน ' + battleOppGameScore + ' ต่อ ' + battleMyGameScore; }
-
+    if(isTechWin) { crown.innerText='🏆'; title.innerText='ชนะ Technical Win!'; title.style.color='var(--agri-green)'; subtitle.innerText = (dcOverrideReward||0) > 0 ? 'คู่แข่งออกไป +' + (dcOverrideReward||0).toLocaleString('th-TH') + ' pt' : 'คู่แข่งออกไปก่อนเกมเริ่ม'; }
+    else if(isWin) { crown.innerText='👑'; title.innerText='ชัยชนะ!'; title.style.color='var(--gold)'; subtitle.innerText = 'คะแนน ' + battleMyGameScore + ' ต่อ ' + battleOppGameScore; }
+    else { crown.innerText='💀'; title.innerText='พ่ายแพ้'; title.style.color='var(--mc-red-light)'; subtitle.innerText = 'คะแนน ' + battleOppGameScore + ' ต่อ ' + battleMyGameScore; }
     document.getElementById('resultMyName').innerText = battleMyInfo?.name||'ฉัน';
     document.getElementById('resultMySite').innerText = battleMyInfo?.site||'';
     document.getElementById('resultMyScore').innerText = battleMyGameScore.toLocaleString('th-TH');
@@ -1520,29 +1465,27 @@ async function showBattleResult(isWin, isTechWin, dcOverrideReward) {
     document.getElementById('resultOppScore').innerText = isTechWin?'-':battleOppGameScore.toLocaleString('th-TH');
     document.getElementById('resultMyCard').classList.toggle('winner', isWin||isTechWin);
     document.getElementById('resultOppCard').classList.toggle('winner', !isWin&&!isTechWin);
-
     const reward = (typeof dcOverrideReward === 'number') ? dcOverrideReward : 0;
     if((isWin || isTechWin) && reward > 0) {
         battlePointsEarned = reward;
         document.getElementById('resultEarnedPts').innerText = '+' + reward.toLocaleString('th-TH') + ' pt';
         try { await sb.rpc('award_battle_winner', { p_emp_id: st.u.employee_id, p_room_id: currentBattleRoomId, p_personal_pts: reward, p_site_pts: 0 }); } catch(e) {}
     } else { battlePointsEarned = 0; document.getElementById('resultEarnedPts').innerText = '+0 pt'; }
-
-    const rb=document.getElementById('btnRematch'); rb.innerHTML='<i class="fas fa-redo"></i> แข่งอีกรอบ'; rb.style.animation=''; rb.disabled=false; rb.style.display=isTechWin?'none':'block';
+    // ลบ Rematch — แสดงแค่ปุ่มกลับหน้าหลัก
+    document.getElementById('btnRematch').style.display='none';
     document.getElementById('battleScoreBoardUI').style.display='none';
     document.getElementById('battleProgressUI').style.display='none';
-    renderBreakdown();
-    nav('pgBattleResult');
+    renderBreakdown(); nav('pgBattleResult');
 }
 
 function updateLiveScoreBar() {
     const total = Math.max(battleMyGameScore + battleOppGameScore, 1);
-    const myPct = Math.max((battleMyGameScore / total) * 100, 5);
-    const oppPct = Math.max((battleOppGameScore / total) * 100, 5);
     const fillMe = document.getElementById('blbFillMe'); const fillOpp = document.getElementById('blbFillOpp');
-    if(fillMe) fillMe.style.width = myPct + '%'; if(fillOpp) fillOpp.style.width = oppPct + '%';
+    if(fillMe) fillMe.style.width = Math.max((battleMyGameScore/total)*100, 5) + '%';
+    if(fillOpp) fillOpp.style.width = Math.max((battleOppGameScore/total)*100, 5) + '%';
     const myDisp = document.getElementById('myBattleScoreDisplay'); const oppDisp = document.getElementById('oppBattleScoreDisplay');
-    if(myDisp) myDisp.innerText = battleMyGameScore.toLocaleString('th-TH'); if(oppDisp) oppDisp.innerText = battleOppGameScore.toLocaleString('th-TH');
+    if(myDisp) myDisp.innerText = battleMyGameScore.toLocaleString('th-TH');
+    if(oppDisp) oppDisp.innerText = battleOppGameScore.toLocaleString('th-TH');
 }
 
 async function renderBreakdown() {
@@ -1558,11 +1501,11 @@ async function renderBreakdown() {
             const myPts = myAns ? myAns.total_points : 0; const oppPts = oppAns ? oppAns.total_points : 0;
             const myCls = myPts > 0 ? 'won' : (myAns && myAns.is_correct ? 'draw' : (myAns ? 'lost' : 'empty'));
             const oppCls = oppPts > 0 ? 'won' : (oppAns && oppAns.is_correct ? 'draw' : (oppAns ? 'lost' : 'empty'));
-            myHtml += '<div class="rb-cell ' + myCls + '"><div class="rb-q">Q' + (q+1) + '</div><div class="rb-pts">' + myPts + '</div></div>';
-            oppHtml += '<div class="rb-cell ' + oppCls + '"><div class="rb-q">Q' + (q+1) + '</div><div class="rb-pts">' + oppPts + '</div></div>';
+            myHtml += '<div class="rb-cell '+myCls+'"><div class="rb-q">Q'+(q+1)+'</div><div class="rb-pts">'+myPts+'</div></div>';
+            oppHtml += '<div class="rb-cell '+oppCls+'"><div class="rb-q">Q'+(q+1)+'</div><div class="rb-pts">'+oppPts+'</div></div>';
         }
-        myGrid.innerHTML = '<div style="grid-column:1/-1;font-size:11px;color:#60A5FA;font-weight:700;margin-bottom:4px;">🔵 ' + (battleMyInfo?.name||'ฉัน') + '</div>' + myHtml;
-        oppGrid.innerHTML = '<div style="grid-column:1/-1;font-size:11px;color:#F87171;font-weight:700;margin-bottom:4px;">🔴 ' + (battleOppInfo?.name||'คู่แข่ง') + '</div>' + oppHtml;
+        myGrid.innerHTML = '<div style="grid-column:1/-1;font-size:11px;color:#60A5FA;font-weight:700;margin-bottom:4px;">🔵 '+(battleMyInfo?.name||'ฉัน')+'</div>' + myHtml;
+        oppGrid.innerHTML = '<div style="grid-column:1/-1;font-size:11px;color:#F87171;font-weight:700;margin-bottom:4px;">🔴 '+(battleOppInfo?.name||'คู่แข่ง')+'</div>' + oppHtml;
     } catch(e) {}
 }
 
@@ -1573,19 +1516,6 @@ async function exitBattleResult() {
     load(true); await fetchD(); render(); load(false); nav('pgMain');
 }
 
-function requestRematch() {
-    rematchRequested=true;
-    if(battleChannel) battleChannel.send({type:'broadcast',event:'rematch_request',payload:{emp_id:st.u.employee_id}});
-    const rb=document.getElementById('btnRematch'); rb.innerHTML='<i class="fas fa-spinner fa-spin"></i> รอคู่แข่งตอบรับ...'; rb.disabled=true;
-    if(rematchOppRequested) startRematch();
-    else setTimeout(()=>{ if(!rematchOppRequested){ rb.innerHTML='<i class="fas fa-redo"></i> แข่งอีกรอบ'; rb.disabled=false; rematchRequested=false; showAlert('คู่แข่งไม่ตอบรับ','หมดเวลา','fa-clock'); } },15000);
-}
-async function startRematch() {
-    if(battleChannel) { await sb.removeChannel(battleChannel); battleChannel=null; }
-    if(currentBattleRoomId) { await sb.rpc('leave_battle',{p_room_id:currentBattleRoomId}); currentBattleRoomId=null; }
-    battleCooldownUntil = 0; enterBattleQueue();
-}
-
 function showConnToast(show) { document.getElementById('connToast').style.display=show?'block':'none'; if(show) setTimeout(()=>showConnToast(false),5000); }
 
 function showBattleWaitScreen(customText) {
@@ -1594,6 +1524,28 @@ function showBattleWaitScreen(customText) {
     ws.innerHTML = `<i class="fas fa-spinner fa-spin" style="font-size:40px; color:var(--gold); margin-bottom:15px;"></i><h2 style="font-family:Outfit">${customText}</h2>`;
     ws.style.display = 'flex';
 }
+
+
+function loadQ(lst, forceQ) {
+    forceQ = forceQ || null; isAnswering = false;
+    const tBar=document.getElementById('tBar'), panic=document.getElementById('panicOverlay'), countBox=document.getElementById('bigCountdown');
+    tBar.style.width='100%'; tBar.style.background='linear-gradient(90deg, var(--agri-green), var(--agri-green-light))';
+    panic.classList.remove('active'); countBox.classList.remove('urgent'); countBox.innerText="8.0";
+    clearInterval(quizInterval); document.getElementById('streak').innerText=st.s;
+    if(forceQ) { st.curQ=forceQ; } else { let available=lst; if(lst.length>1&&st.lastId){available=lst.filter(q=>q.id!==st.lastId);} st.curQ=available[Math.floor(Math.random()*available.length)]; }
+    st.lastId=st.curQ.id; st.qStartTime=Date.now();
+    const ws=document.getElementById('battleWaitScreen'); if(ws) ws.style.display='none';
+    const basePt=Math.min((st.s+1)*10,50); const finalPt=st.isPeak?basePt*2:basePt;
+    document.getElementById('qArea').innerHTML = `<div style="text-align:center; animation: slideUpFade 0.4s ease;"><div class="q-txt">${st.curQ.question}</div><div class="potential-win">รับคะแนน: +${finalPt}</div></div><div class="choice-grid" style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">${shuffle([1,2,3,4]).map((i, idx) => `<button class="choice-btn" style="animation: slideUpFade 0.4s ease ${idx*0.1}s backwards;" onclick="ans('${i}',this)">${st.curQ['option_'+i]}</button>`).join('')}</div>`;
+    let timeLeft=8.0;
+    quizInterval=setInterval(()=>{
+        if(isAnswering) return; timeLeft-=0.1;
+        tBar.style.width=(timeLeft/8.0)*100+'%'; countBox.innerText=Math.max(0,timeLeft).toFixed(1);
+        if(timeLeft<=3.0){tBar.style.background='linear-gradient(90deg, var(--mc-red), var(--mc-red-light))';panic.classList.add('active');countBox.classList.add('urgent');}
+        if(timeLeft<=0){clearInterval(quizInterval);isAnswering=false;endQ(false);}
+    },100);
+}
+
 let hideTimeout = null;
 document.addEventListener("visibilitychange", () => {
     const isQueueActive = document.getElementById('pgBattleQueue').classList.contains('active');
