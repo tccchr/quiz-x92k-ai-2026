@@ -1,7 +1,7 @@
 <!DOCTYPE html><html lang="th"><head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
-  <title>get GREAT by Human Resources Development</title>
+  <title>V.6 get GREAT by Human Resources Development</title>
   
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=Kanit:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
@@ -1384,6 +1384,16 @@ function startQuestionTimer() {
     clearInterval(quizInterval); quizInterval = null;
     isAnswering = false;
     st.qStartTime = Date.now();
+    const seed = battleShuffleSeeds[battleIndex] || (battleIndex+1)*12345;
+    const choiceOrder = seededShuffle([1,2,3,4], seed);
+    document.getElementById('qArea').innerHTML = `
+        <div style="text-align:center; animation: slideUpFade 0.4s ease;">
+            <div style="font-size:13px; color:var(--text-muted); margin-bottom:8px; letter-spacing:2px;">ข้อ ${battleIndex+1} / ${BATTLE_Q_COUNT}</div>
+            <div class="q-txt">${st.curQ.question}</div>
+        </div>
+        <div class="choice-grid" style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
+            ${choiceOrder.map((i, idx) => `<button class="choice-btn" style="animation: slideUpFade 0.4s ease ${idx*0.1}s backwards;" onclick="ans('${i}',this)">${st.curQ['option_'+i]}</button>`).join('')}
+        </div>`;
     const toast = document.getElementById('oppAnswerToast'); if(toast) toast.classList.remove('show');
     const tBar=document.getElementById('tBar'), panic=document.getElementById('panicOverlay'), countBox=document.getElementById('bigCountdown');
     tBar.style.width='100%'; tBar.style.background='linear-gradient(90deg, var(--agri-green), var(--agri-green-light))';
@@ -1431,17 +1441,11 @@ function battleLoadQ() {
     st.curQ = battleQuestions[battleIndex]; st.lastId = st.curQ.id;
     updateBattleProgress(battleIndex, 'active');
     document.getElementById('streak').innerText = st.s;
-    const seed = battleShuffleSeeds[battleIndex] || (battleIndex+1)*12345;
-    const choiceOrder = seededShuffle([1,2,3,4], seed);
-
     isAnswering = true;
     document.getElementById('qArea').innerHTML = `
-        <div style="text-align:center; animation: slideUpFade 0.4s ease;">
-            <div style="font-size:13px; color:var(--text-muted); margin-bottom:8px; letter-spacing:2px;">ข้อ ${battleIndex+1} / ${BATTLE_Q_COUNT}</div>
-            <div class="q-txt">${st.curQ.question}</div>
-        </div>
-        <div class="choice-grid" style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
-            ${choiceOrder.map((i, idx) => `<button class="choice-btn" style="animation: slideUpFade 0.4s ease ${idx*0.1}s backwards;" onclick="ans('${i}',this)">${st.curQ['option_'+i]}</button>`).join('')}
+        <div style="text-align:center; padding: 40px; animation: pulse 1.5s infinite;">
+            <i class="fas fa-spinner fa-spin" style="font-size:40px; color:var(--gold); margin-bottom:15px;"></i>
+            <div style="font-size:16px; color:var(--text-muted); letter-spacing:1px;">รอเริ่มเกม...</div>
         </div>`;
 
     myReadyForQ = true;
@@ -1514,26 +1518,32 @@ async function showBattleResult(isWin, isTechWin, dcOverrideReward) {
     if(isTechWin) { crown.innerText='🏆'; title.innerText='ชนะ Technical Win!'; title.style.color='var(--agri-green)'; subtitle.innerText = (dcOverrideReward||0) > 0 ? 'คู่แข่งออกไป +' + (dcOverrideReward||0).toLocaleString('th-TH') + ' pt' : 'คู่แข่งออกไปก่อนเกมเริ่ม'; }
     else if(isWin) { crown.innerText='👑'; title.innerText='ชัยชนะ!'; title.style.color='var(--gold)'; subtitle.innerText = 'คะแนน ' + battleMyGameScore + ' ต่อ ' + battleOppGameScore; }
     else { crown.innerText='💀'; title.innerText='พ่ายแพ้'; title.style.color='var(--mc-red-light)'; subtitle.innerText = 'คะแนน ' + battleOppGameScore + ' ต่อ ' + battleMyGameScore; }
-    document.getElementById('resultMyName').innerText = battleMyInfo?.name||'ฉัน';
-    document.getElementById('resultMySite').innerText = battleMyInfo?.site||'';
-    document.getElementById('resultMyScore').innerText = battleMyGameScore.toLocaleString('th-TH');
-    document.getElementById('resultMyScore').style.color = isWin?'var(--agri-green)':'var(--mc-red-light)';
-    document.getElementById('resultOppName').innerText = battleOppInfo?.name||'คู่แข่ง';
-    document.getElementById('resultOppSite').innerText = battleOppInfo?.site||'';
-    document.getElementById('resultOppScore').innerText = isTechWin?'-':battleOppGameScore.toLocaleString('th-TH');
-    document.getElementById('resultMyCard').classList.toggle('winner', isWin||isTechWin);
-    document.getElementById('resultOppCard').classList.toggle('winner', !isWin&&!isTechWin);
-    const reward = (typeof dcOverrideReward === 'number') ? dcOverrideReward : 0;
-    if((isWin || isTechWin) && reward > 0) {
-        battlePointsEarned = reward;
-        document.getElementById('resultEarnedPts').innerText = '+' + reward.toLocaleString('th-TH') + ' pt';
-        try { await sb.rpc('award_battle_winner', { p_emp_id: st.u.employee_id, p_room_id: currentBattleRoomId, p_personal_pts: reward, p_site_pts: 0 }); } catch(e) {}
-    } else { battlePointsEarned = 0; document.getElementById('resultEarnedPts').innerText = '+0 pt'; }
-    // ลบ Rematch — แสดงแค่ปุ่มกลับหน้าหลัก
-    document.getElementById('btnRematch').style.display='none';
-    document.getElementById('battleScoreBoardUI').style.display='none';
-    document.getElementById('battleProgressUI').style.display='none';
-    renderBreakdown(); nav('pgBattleResult');
+    try {
+        document.getElementById('resultMyName').innerText = battleMyInfo?.name||'ฉัน';
+        document.getElementById('resultMySite').innerText = battleMyInfo?.site||'';
+        document.getElementById('resultMyScore').innerText = battleMyGameScore.toLocaleString('th-TH');
+        document.getElementById('resultMyScore').style.color = isWin?'var(--agri-green)':'var(--mc-red-light)';
+        document.getElementById('resultOppName').innerText = battleOppInfo?.name||'คู่แข่ง';
+        document.getElementById('resultOppSite').innerText = battleOppInfo?.site||'';
+        document.getElementById('resultOppScore').innerText = isTechWin?'-':battleOppGameScore.toLocaleString('th-TH');
+        document.getElementById('resultMyCard').classList.toggle('winner', isWin||isTechWin);
+        document.getElementById('resultOppCard').classList.toggle('winner', !isWin&&!isTechWin);
+        const reward = (typeof dcOverrideReward === 'number') ? dcOverrideReward : 0;
+        if((isWin || isTechWin) && reward > 0) {
+            battlePointsEarned = reward;
+            document.getElementById('resultEarnedPts').innerText = '+' + reward.toLocaleString('th-TH') + ' pt';
+            try { await sb.rpc('award_battle_winner', { p_emp_id: st.u.employee_id, p_room_id: currentBattleRoomId, p_personal_pts: reward, p_site_pts: 0 }); } catch(e) {}
+        } else { battlePointsEarned = 0; document.getElementById('resultEarnedPts').innerText = '+0 pt'; }
+        // ลบ Rematch — แสดงแค่ปุ่มกลับหน้าหลัก
+        document.getElementById('btnRematch').style.display='none';
+        document.getElementById('battleScoreBoardUI').style.display='none';
+        document.getElementById('battleProgressUI').style.display='none';
+        await renderBreakdown();
+    } catch(err) {
+        console.error("Error rendering battle result:", err);
+    } finally {
+        nav('pgBattleResult');
+    }
 }
 
 function updateLiveScoreBar() {
