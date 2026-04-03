@@ -49,6 +49,7 @@
             outline: none;
             margin: 0;
             padding: 0;
+            touch-action: manipulation;
         }
 
         body {
@@ -59,6 +60,30 @@
             overflow: hidden;
             font-size: 16px;
             line-height: 1.5;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        input, textarea {
+            user-select: auto;
+            -webkit-user-select: auto;
+        }
+
+        .choice-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+
+        @media (max-width: 440px) {
+            .choice-grid {
+                grid-template-columns: 1fr;
+                gap: 12px;
+            }
+            .choice-btn {
+                padding: 16px;
+                font-size: 16px;
+            }
         }
 
         @keyframes slideUpFade {
@@ -3526,7 +3551,7 @@
         function startTutorial() { currentTutStep = 0; isTutorialMode = true; document.getElementById('tutBlocker').style.display = 'block'; document.getElementById('tutSpotlight').style.display = 'block'; document.getElementById('tutTooltip').style.display = 'flex'; showTutStep(); if (tutInterval) clearInterval(tutInterval); tutInterval = setInterval(() => { if (!isTutorialMode) return; let step = tutSteps[currentTutStep]; if (step && step.el !== 'mock-game') { let target = document.querySelector(step.el) || document.querySelector('.fab-area'); if (target) updateSpotlightPos(target); } }, 10); }
         function showTutStep() { let step = tutSteps[currentTutStep]; if (step.el === 'mock-game') { startMockQuiz(); return; } let target = document.querySelector(step.el) || document.querySelector('.fab-area'); target.scrollIntoView({ behavior: 'smooth', block: 'center' }); document.getElementById('tutTitle').innerHTML = `<i class="fas fa-star"></i> ${step.title}`; document.getElementById('tutDesc').innerText = step.getDesc ? step.getDesc() : step.desc; document.getElementById('tutStepCount').innerText = `${currentTutStep + 1}/${tutSteps.length}`; document.getElementById('tutBtn').innerText = 'ถัดไป'; document.getElementById('tutBtn').onclick = nextTutStep; document.getElementById('tutBtn').style.display = 'inline-block'; document.getElementById('tutSkipBtn').style.display = 'inline-block'; }
         function updateSpotlightPos(target) { if (!target || !isTutorialMode) return; const rect = target.getBoundingClientRect(); const spot = document.getElementById('tutSpotlight'); const tooltip = document.getElementById('tutTooltip'); spot.style.top = (rect.top - 8) + 'px'; spot.style.left = (rect.left - 8) + 'px'; spot.style.width = (rect.width + 16) + 'px'; spot.style.height = (rect.height + 16) + 'px'; if (rect.top > window.innerHeight / 2) { tooltip.style.top = '30px'; tooltip.style.bottom = 'auto'; } else { tooltip.style.bottom = '30px'; tooltip.style.top = 'auto'; } }
-        function startMockQuiz() { nav('pgQuiz'); document.getElementById('tutSpotlight').style.display = 'none'; document.getElementById('tutBlocker').style.display = 'none'; document.getElementById('panicOverlay').classList.remove('active'); document.getElementById('bigCountdown').innerText = "∞"; document.getElementById('tBar').style.width = '100%'; document.getElementById('streak').innerText = '0'; document.getElementById('qArea').innerHTML = `<div style="text-align:center; position:relative; z-index:10000; animation: slideUpFade 0.4s ease;"><div class="q-txt" style="color:var(--gold); font-size: 28px;">โหมดสอนเล่น: สินค้าของเราคืออะไร?</div><div class="potential-win">รับคะแนน: +50</div></div><div class="choice-grid" style="display:grid; grid-template-columns: 1fr 1fr; gap:15px; position:relative; z-index:10000;"><button class="choice-btn mock-btn" onclick="mockAns(false, this)">ไก่ชน</button><button class="choice-btn mock-btn mock-correct" onclick="mockAns(true, this)">ปุ๋ย</button><button class="choice-btn mock-btn" onclick="mockAns(false, this)">สิงโต</button><button class="choice-btn mock-btn" onclick="mockAns(false, this)">รวงข้าว</button></div>`; document.getElementById('tutTitle').innerHTML = `<i class="fas fa-hand-pointer"></i> ลองกดเลือกคำตอบดูสิ!`; document.getElementById('tutDesc').innerText = "ให้เวลาคิด ∞ วินาที\n\n(ในเกมจริงจะมีเวลาแค่ 8 วิ!)"; document.getElementById('tutStepCount').innerText = "ทดลองเล่น"; document.getElementById('tutBtn').style.display = 'none'; document.getElementById('tutSkipBtn').style.display = 'none'; const tooltip = document.getElementById('tutTooltip'); tooltip.style.top = 'auto'; tooltip.style.bottom = '30px'; }
+        function startMockQuiz() { nav('pgQuiz'); document.getElementById('tutSpotlight').style.display = 'none'; document.getElementById('tutBlocker').style.display = 'none'; document.getElementById('panicOverlay').classList.remove('active'); document.getElementById('bigCountdown').innerText = "∞"; document.getElementById('tBar').style.width = '100%'; document.getElementById('streak').innerText = '0'; document.getElementById('qArea').innerHTML = `<div style="text-align:center; position:relative; z-index:10000; animation: slideUpFade 0.4s ease;"><div class="q-txt" style="color:var(--gold); font-size: 28px;">โหมดสอนเล่น: สินค้าของเราคืออะไร?</div><div class="potential-win">รับคะแนน: +50</div></div><div class="choice-grid" style="position:relative; z-index:10000;"><button class="choice-btn mock-btn" onclick="mockAns(false, this)">ไก่ชน</button><button class="choice-btn mock-btn mock-correct" onclick="mockAns(true, this)">ปุ๋ย</button><button class="choice-btn mock-btn" onclick="mockAns(false, this)">สิงโต</button><button class="choice-btn mock-btn" onclick="mockAns(false, this)">รวงข้าว</button></div>`; document.getElementById('tutTitle').innerHTML = `<i class="fas fa-hand-pointer"></i> ลองกดเลือกคำตอบดูสิ!`; document.getElementById('tutDesc').innerText = "ให้เวลาคิด ∞ วินาที\n\n(ในเกมจริงจะมีเวลาแค่ 8 วิ!)"; document.getElementById('tutStepCount').innerText = "ทดลองเล่น"; document.getElementById('tutBtn').style.display = 'none'; document.getElementById('tutSkipBtn').style.display = 'none'; const tooltip = document.getElementById('tutTooltip'); tooltip.style.top = 'auto'; tooltip.style.bottom = '30px'; }
         function mockAns(isCorrect, btn) { document.querySelectorAll('.mock-btn').forEach(b => b.disabled = true); const nextBtn = document.getElementById('tutBtn'); if (isCorrect) { btn.classList.add('correct'); showScorePopup("+50"); document.getElementById('tutTitle').innerHTML = `<i class="fas fa-check-circle" style="color:var(--agri-green);"></i> ยอดเยี่ยมมาก!`; document.getElementById('tutDesc').innerText = "เมื่อตอบถูก คุณจะได้คะแนนโบนัสตามความเร็ว!\n\nพร้อมลงสมรภูมิจริงหรือยัง?"; } else { btn.classList.add('incorrect'); document.querySelector('.mock-correct').classList.add('correct'); document.getElementById('tutTitle').innerHTML = `<i class="fas fa-times-circle" style="color:var(--mc-red);"></i> อ๊ะ! ตอบผิดซะแล้ว`; document.getElementById('tutDesc').innerText = "ถ้าตอบผิดเกมจะจบทันที!\nแต่กดเริ่มใหม่ได้เรื่อยๆ\nพร้อมลุยของจริงแล้วใช่ไหม?"; } nextBtn.style.display = 'inline-block'; nextBtn.innerHTML = '<i class="fas fa-flag-checkered"></i> จบการสอน'; nextBtn.style.background = 'linear-gradient(135deg, var(--gold), var(--gold-dark))'; nextBtn.style.color = 'var(--bg-dark)'; nextBtn.style.boxShadow = '0 8px 25px var(--gold-glow)'; nextBtn.onclick = endTutorial; }
         function nextTutStep() { currentTutStep++; if (currentTutStep < tutSteps.length) showTutStep(); else endTutorial(); }
         function endTutorial() { isTutorialMode = false; if (tutInterval) clearInterval(tutInterval); document.getElementById('tutBlocker').style.display = 'none'; document.getElementById('tutSpotlight').style.display = 'none'; document.getElementById('tutTooltip').style.display = 'none'; const btn = document.getElementById('tutBtn'); btn.style.background = ''; btn.style.color = 'white'; btn.style.boxShadow = ''; if (document.getElementById('pgQuiz').classList.contains('active')) { nav('pgMain'); render(); } }
@@ -3950,7 +3975,7 @@
             <div style="font-size:13px; color:var(--text-muted); margin-bottom:8px; letter-spacing:2px;">ข้อ ${battleIndex + 1} / ${BATTLE_Q_COUNT}</div>
             <div class="q-txt">${st.curQ.question}</div>
         </div>
-        <div class="choice-grid" style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
+        <div class="choice-grid">
             ${choiceOrder.map((i, idx) => `<button class="choice-btn" style="animation: slideUpFade 0.4s ease ${idx * 0.1}s backwards;" onclick="ans('${i}',this)">${st.curQ['option_' + i]}</button>`).join('')}
         </div>`;
             const toast = document.getElementById('oppAnswerToast'); if (toast) toast.classList.remove('show');
@@ -4212,7 +4237,7 @@
             st.lastId = st.curQ.id; st.qStartTime = Date.now();
             const ws = document.getElementById('battleWaitScreen'); if (ws) ws.style.display = 'none';
             const basePt = Math.min((st.s + 1) * 10, 50); const finalPt = st.isPeak ? basePt * 2 : basePt;
-            document.getElementById('qArea').innerHTML = `<div style="text-align:center; animation: slideUpFade 0.4s ease;"><div class="q-txt">${st.curQ.question}</div><div class="potential-win">รับคะแนน: +${finalPt}</div></div><div class="choice-grid" style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">${shuffle([1, 2, 3, 4]).map((i, idx) => `<button class="choice-btn" style="animation: slideUpFade 0.4s ease ${idx * 0.1}s backwards;" onclick="ans('${i}',this)">${st.curQ['option_' + i]}</button>`).join('')}</div>`;
+            document.getElementById('qArea').innerHTML = `<div style="text-align:center; animation: slideUpFade 0.4s ease;"><div class="q-txt">${st.curQ.question}</div><div class="potential-win">รับคะแนน: +${finalPt}</div></div><div class="choice-grid">${shuffle([1, 2, 3, 4]).map((i, idx) => `<button class="choice-btn" style="animation: slideUpFade 0.4s ease ${idx * 0.1}s backwards;" onclick="ans('${i}',this)">${st.curQ['option_' + i]}</button>`).join('')}</div>`;
             let timeLeft = 8.0;
             quizInterval = setInterval(() => {
                 if (isAnswering) return; timeLeft -= 0.1;
