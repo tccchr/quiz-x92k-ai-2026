@@ -3813,9 +3813,10 @@
             lastOppHeartbeat = Date.now();
             battleHeartbeatInterval = setInterval(() => {
                 if (battleChannel) try { battleChannel.send({ type: 'broadcast', event: 'heartbeat', payload: { emp_id: st.u.employee_id } }); } catch (e) { }
-                if (Date.now() - lastOppHeartbeat > 30000 && isBattleMode && battleIndex < BATTLE_Q_COUNT) {
+                // ลด delay จาก 30 วินาที เหลือ 12 วินาที เพื่อไม่ให้ผู้เล่นที่ยังอยู่ต้องรอนานเกินจนเข้าใจผิด
+                if (Date.now() - lastOppHeartbeat > 12000 && isBattleMode && battleIndex < BATTLE_Q_COUNT) {
                     let dcReward = 0; if (battleIndex >= 5) dcReward = 2000; else if (battleIndex >= 3) dcReward = 500;
-                    showAlert('คู่ต่อสู้หลุดการเชื่อมต่อ!', 'หลุดการเชื่อมต่อ', 'fa-wifi', 'var(--agri-green)', () => showBattleResult(true, true, dcReward));
+                    showAlert('คู่ต่อสู้หลุดการเชื่อมต่อ หรือพักหน้าจอนานเกินไป!', 'ชนะผ่าน!', 'fa-user-slash', 'var(--agri-green)', () => showBattleResult(true, true, dcReward));
                     clearInterval(battleHeartbeatInterval); battleHeartbeatInterval = null;
                 }
             }, 3000);
@@ -4248,13 +4249,33 @@
         }
 
         let hideTimeout = null;
+        let battleHideTimeout = null;
         document.addEventListener("visibilitychange", () => {
             const isQueueActive = document.getElementById('pgBattleQueue').classList.contains('active');
-            if (document.hidden && currentBattleRoomId && isQueueActive) { hideTimeout = setTimeout(() => { cancelBattleQueue(); showAlert('คิวหลุดเนื่องจากพับหน้าจอเกิน 15 วินาที', 'คิวหลุด!', 'fa-clock'); }, 15000); }
-            else { if (hideTimeout) { clearTimeout(hideTimeout); hideTimeout = null; } }
+            if (document.hidden) {
+                if (currentBattleRoomId && isQueueActive) { 
+                    hideTimeout = setTimeout(() => { cancelBattleQueue(); showAlert('คิวหลุดเนื่องจากพับหน้าจอเกิน 15 วินาที', 'คิวหลุด!', 'fa-clock'); }, 15000); 
+                } else if (isBattleMode && currentBattleRoomId) {
+                    // หากพับจอตอนกำลังแข่ง จะถูกนับเป็นการหนี/หลุด และผู้เล่นฝั่งตรงข้ามจะรู้ทันที
+                    battleHideTimeout = setTimeout(() => {
+                         if (battleChannel) try { battleChannel.send({ type: 'broadcast', event: 'opponent_left', payload: { emp_id: st.u.employee_id } }); } catch(err) {}
+                         showBattleResult(false, false, 0);
+                         if (currentBattleRoomId) { sb.rpc('leave_battle', { p_room_id: currentBattleRoomId }); currentBattleRoomId = null; }
+                         showAlert('เกมถูกยกเลิกเนื่องจากคุณพับหน้าจอนานเกิน 15 วินาที', 'ปรับแพ้บาย', 'fa-times-circle', 'var(--mc-red)');
+                    }, 15000);
+                }
+            }
+            else { 
+                if (hideTimeout) { clearTimeout(hideTimeout); hideTimeout = null; } 
+                if (battleHideTimeout) { clearTimeout(battleHideTimeout); battleHideTimeout = null; }
+            }
         });
         window.addEventListener("beforeunload", (e) => {
-            if (currentBattleRoomId) { fetch(`${SB_URL}/rest/v1/rpc/leave_battle`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }, body: JSON.stringify({ p_room_id: currentBattleRoomId }), keepalive: true }); }
+            if (currentBattleRoomId) { 
+                // แจ้งฝั่งตรงข้ามทันทีก่อนแอพจะปิด ช่วยลบ Delay ขาดขาด
+                if (battleChannel) try { battleChannel.send({ type: 'broadcast', event: 'opponent_left', payload: { emp_id: st.u.employee_id } }); } catch(err) {}
+                fetch(`${SB_URL}/rest/v1/rpc/leave_battle`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` }, body: JSON.stringify({ p_room_id: currentBattleRoomId }), keepalive: true }); 
+            }
         });
     </script>
 </body>
