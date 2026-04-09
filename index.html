@@ -3339,7 +3339,8 @@
         }
 
         async function ans(v, btn) {
-            if (isBattleMode) { if (myAnsweredThisQ) return; } else { if (isAnswering) return; }
+            // FIX จุดบอด 1: ล็อกปุ่มกดส่งคำตอบทันทีแบบ Synchronous กันคนกดยิงรัวๆ 
+            if (isBattleMode) { if (myAnsweredThisQ || isPendingRpc) return; isPendingRpc = true; } else { if (isAnswering) return; }
             isAnswering = true;
             const timeTaken = Date.now() - st.qStartTime;
             if (!isBattleMode) clearInterval(quizInterval);
@@ -3348,9 +3349,15 @@
 
             // ===== BATTLE MODE =====
             if (isBattleMode && currentBattleRoomId) {
+                const currentQIdx = battleIndex; // FIX จุดบอด 2: Capture เลขข้อเอาไว้
                 const battleRpcPromise = sb.rpc('submit_battle_answer', { p_emp_id: st.u.employee_id, p_room_id: currentBattleRoomId, p_q_idx: battleIndex, p_question_id: st.curQ.id, p_selected: parseInt(v), p_time_taken: timeTaken, p_streak: st.s });
                 const timeoutPromise2 = new Promise(r => setTimeout(() => r({ error: { message: 'timeout' } }), 5000));
                 const { data, error } = await Promise.race([battleRpcPromise, timeoutPromise2]);
+                
+                isPendingRpc = false;
+                // ตัดทิ้งถ้าเลขข้อเปลี่ยนไปแล้ว (ป้องกัน Promise ส่งผลข้ามข้อ)
+                if (currentQIdx !== battleIndex) return;
+
                 if (error || !data) {
                     console.warn('submit_battle_answer failed:', error);
                     btn.classList.add('incorrect'); myAnsweredThisQ = true;
@@ -3612,6 +3619,7 @@
         const BATTLE_Q_COUNT = 10, BATTLE_TIME_PER_Q = 8;
         let myAnsweredThisQ = false, oppAnsweredThisQ = false;
         let myAnswerTimeThisQ = 0, oppAnswerTimeThisQ = 0;
+        let isPendingRpc = false;
         let myConsecutiveTimeouts = 0, oppConsecutiveTimeouts = 0;
         let oppCorrectThisQ = false;
         let isAdvancingQ = false;
@@ -3819,7 +3827,8 @@
                 if (battleChannel) try { battleChannel.send({ type: 'broadcast', event: 'heartbeat', payload: { emp_id: st.u.employee_id } }); } catch (e) { }
                 if (Date.now() - lastOppHeartbeat > 30000 && isBattleMode && battleIndex < BATTLE_Q_COUNT) {
                     let dcReward = 0; if (battleIndex >= 5) dcReward = 2000; else if (battleIndex >= 3) dcReward = 500;
-                    showAlert('คู่ต่อสู้หลุดการเชื่อมต่อ!', 'หลุดการเชื่อมต่อ', 'fa-wifi', 'var(--agri-green)', () => showBattleResult(true, true, dcReward));
+                    showBattleResult(true, true, dcReward);
+                    showAlert('คู่ต่อสู้หลุดการเชื่อมต่อ!', 'หลุดการเชื่อมต่อ', 'fa-wifi', 'var(--agri-green)');
                     clearInterval(battleHeartbeatInterval); battleHeartbeatInterval = null;
                 }
             }, 3000);
@@ -3939,8 +3948,9 @@
                 .on('broadcast', { event: 'opponent_left' }, payload => {
                     if (payload.payload.emp_id === st.u.employee_id) return;
                     if (battleHeartbeatInterval) clearInterval(battleHeartbeatInterval);
-                    let r = 0; if (battleIndex >= 5) r = 2000; else if (battleIndex >= 3) r = 500;
-                    showAlert(r > 0 ? 'คู่แข่งออกไป! +' + r + ' pt' : 'คู่แข่งออกไป', 'ชนะผ่าน!', 'fa-trophy', 'var(--agri-green)', () => showBattleResult(true, true, r));
+                    let r = 0; if (battleIndex >= 5) r = 2000; else if (battleIndex >= 3) dcReward = 500;
+                    showBattleResult(true, true, r);
+                    showAlert(r > 0 ? 'คู่แข่งออกไป! +' + r + ' pt' : 'คู่แข่งออกไป', 'ชนะผ่าน!', 'fa-trophy', 'var(--agri-green)');
                 })
                 .on('broadcast', { event: 'heartbeat' }, payload => {
                     if (payload.payload.emp_id === st.u.employee_id) return;
@@ -4014,6 +4024,7 @@
 
             myAnsweredThisQ = false; oppAnsweredThisQ = false;
             myAnswerTimeThisQ = 0; oppAnswerTimeThisQ = 0;
+            isPendingRpc = false;
             oppCorrectThisQ = false; isAdvancingQ = false;
             myReadyForQ = false; oppReadyForQ = false;
             timerRunning = false;
@@ -4068,13 +4079,15 @@
             if (myConsecutiveTimeouts >= 3) {
                  clearInterval(quizInterval); quizInterval = null; timerRunning = false;
                  if (battleChannel) try { battleChannel.send({ type: 'broadcast', event: 'opponent_left', payload: { emp_id: st.u.employee_id } }); } catch(err) {}
-                 showAlert('คุณไม่ได้ตอบคำถาม 3 ข้อติดต่อกัน', 'ปรับแพ้', 'fa-times-circle', 'var(--mc-red)', () => showBattleResult(false, false, 0));
+                 showBattleResult(false, false, 0);
+                 showAlert('คุณไม่ได้ตอบคำถาม 3 ข้อติดต่อกัน', 'ปรับแพ้บาย', 'fa-times-circle', 'var(--mc-red)');
                  return;
             }
             if (oppConsecutiveTimeouts >= 3) {
                  clearInterval(quizInterval); quizInterval = null; timerRunning = false;
                  let dcReward = 0; if (battleIndex >= 5) dcReward = 2000; else if (battleIndex >= 3) dcReward = 500;
-                 showAlert('คู่แข่งไม่ตอบคำถาม 3 ข้อติดต่อกัน', 'ชนะผ่าน!', 'fa-trophy', 'var(--agri-green)', () => showBattleResult(true, true, dcReward));
+                 showBattleResult(true, true, dcReward);
+                 showAlert('คู่แข่งไม่ตอบคำถาม 3 ข้อติดต่อกัน', 'ชนะผ่าน!', 'fa-trophy', 'var(--agri-green)');
                  return;
             }
 
