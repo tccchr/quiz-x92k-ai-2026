@@ -3510,17 +3510,35 @@
         function delPin() { if (currentPin.length > 0) { currentPin = currentPin.slice(0, -1); updatePinDisplay(); document.getElementById('pinErr').innerText = ''; } }
         function updatePinDisplay() { document.querySelectorAll('.pin-dot').forEach((dot, i) => { if (i < currentPin.length) dot.classList.add('filled'); else dot.classList.remove('filled'); }); }
         async function submitPin() {
-            load(true);
-            if (isPinSetupMode) { const { data: success } = await sb.rpc('set_pin', { p_emp_id: tempEmpId, p_pin: currentPin }); if (success) { finalizeLogin(tempEmpId); } else { document.getElementById('pinErr').innerText = "เกิดข้อผิดพลาด"; currentPin = ''; updatePinDisplay(); load(false); } }
-            else { const { data: isValid } = await sb.rpc('verify_pin', { p_emp_id: tempEmpId, p_pin: currentPin }); if (isValid) { finalizeLogin(tempEmpId); } else { document.getElementById('pinErr').innerText = "รหัส PIN ไม่ถูกต้อง!"; currentPin = ''; updatePinDisplay(); const dots = document.querySelector('.pin-display'); dots.style.animation = 'shake 0.4s'; setTimeout(() => dots.style.animation = '', 400); load(false); } }
+            try {
+                load(true);
+                if (isPinSetupMode) { 
+                    const res = await sb.rpc('set_pin', { p_emp_id: tempEmpId, p_pin: currentPin }); 
+                    if (res.error) throw res.error;
+                    if (res.data) { finalizeLogin(tempEmpId); } else { throw new Error("Invalid response"); } 
+                } else { 
+                    const res = await sb.rpc('verify_pin', { p_emp_id: tempEmpId, p_pin: currentPin }); 
+                    if (res.error) throw res.error;
+                    if (res.data) { finalizeLogin(tempEmpId); } else { document.getElementById('pinErr').innerText = "รหัส PIN ไม่ถูกต้อง!"; currentPin = ''; updatePinDisplay(); const dots = document.querySelector('.pin-display'); dots.style.animation = 'shake 0.4s'; setTimeout(() => dots.style.animation = '', 400); load(false); } 
+                }
+            } catch (err) {
+                document.getElementById('pinErr').innerText = "Error: " + (err.message || String(err));
+                currentPin = ''; updatePinDisplay(); load(false);
+            }
         }
         async function finalizeLogin(id) {
-            const { data } = await sb.from('employees').select('id, employee_id, name, site, is_active, created_at').eq('employee_id', id).single();
-            load(false);
-            if (data) { 
-                st.u = data; 
-                sb.from('employees').update({ session_token: mySessionToken }).eq('employee_id', st.u.employee_id).then();
-                document.getElementById('uName').innerText = data.name.split(' ')[0]; document.getElementById('uSite').innerText = data.site; document.getElementById('lbSite').innerText = `(${data.site})`; await fetchD(); render(); nav('pgMain'); const myLogs = st.l.filter(log => log.employee_id === st.u.employee_id); if (myLogs.length === 0) setTimeout(() => startTutorial(), 1000); 
+            try {
+                const { data, error } = await sb.from('employees').select('id, employee_id, name, site, is_active, created_at').eq('employee_id', id).single();
+                if (error) throw error;
+                load(false);
+                if (data) { 
+                    st.u = data; 
+                    sb.rpc('set_session_token', { p_emp_id: String(st.u.employee_id), p_token: mySessionToken }).then(({error}) => { if(error) console.error(error); });
+                    document.getElementById('uName').innerText = data.name.split(' ')[0]; document.getElementById('uSite').innerText = data.site; document.getElementById('lbSite').innerText = `(${data.site})`; await fetchD(); render(); nav('pgMain'); const myLogs = st.l.filter(log => log.employee_id === st.u.employee_id); if (myLogs.length === 0) setTimeout(() => startTutorial(), 1000); 
+                }
+            } catch (err) {
+                document.getElementById('pinErr').innerText = "Login Error: " + (err.message || String(err));
+                load(false);
             }
         }
         function cancelPin() { tempEmpId = null; currentPin = ''; document.getElementById('lid').value = ''; document.getElementById('lErr').innerText = ''; nav('pgLogin'); }
