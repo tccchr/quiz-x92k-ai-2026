@@ -3170,6 +3170,8 @@
         let tempEmpId = null;
         let isPinSetupMode = false;
         let currentPin = '';
+        const mySessionToken = Math.random().toString(36).substring(2);
+        let sessionCheckCounter = 0;
         let isAnswering = false;
 
         // =============================================================================
@@ -3459,6 +3461,20 @@
 
         setInterval(checkGameStatus, 1000);
         function checkGameStatus() {
+            if (st.u && st.u.type !== 'admin') {
+                sessionCheckCounter++;
+                if (sessionCheckCounter >= 20) {
+                    sessionCheckCounter = 0;
+                    sb.from('employees').select('session_token').eq('employee_id', st.u.employee_id).single()
+                        .then(({ data }) => {
+                            if (data && data.session_token && data.session_token !== mySessionToken) {
+                                alert('บัญชีนี้ถูกเข้าสู่ระบบจากเครื่องอื่น ระบบจะทำการออกจากระบบโดยอัตโนมัติ');
+                                doLogout();
+                            }
+                        }).catch(()=>{});
+                }
+            }
+
             const now = new Date(Date.now() + st.timeOffset);
             const curMins = now.getHours() * 60 + now.getMinutes(); const curSecs = now.getSeconds();
             let activeSession = null; let nextSessionStart = 9999;
@@ -3501,7 +3517,11 @@
         async function finalizeLogin(id) {
             const { data } = await sb.from('employees').select('id, employee_id, name, site, is_active, created_at').eq('employee_id', id).single();
             load(false);
-            if (data) { st.u = data; document.getElementById('uName').innerText = data.name.split(' ')[0]; document.getElementById('uSite').innerText = data.site; document.getElementById('lbSite').innerText = `(${data.site})`; await fetchD(); render(); nav('pgMain'); const myLogs = st.l.filter(log => log.employee_id === st.u.employee_id); if (myLogs.length === 0) setTimeout(() => startTutorial(), 1000); }
+            if (data) { 
+                st.u = data; 
+                sb.from('employees').update({ session_token: mySessionToken }).eq('employee_id', st.u.employee_id).then();
+                document.getElementById('uName').innerText = data.name.split(' ')[0]; document.getElementById('uSite').innerText = data.site; document.getElementById('lbSite').innerText = `(${data.site})`; await fetchD(); render(); nav('pgMain'); const myLogs = st.l.filter(log => log.employee_id === st.u.employee_id); if (myLogs.length === 0) setTimeout(() => startTutorial(), 1000); 
+            }
         }
         function cancelPin() { tempEmpId = null; currentPin = ''; document.getElementById('lid').value = ''; document.getElementById('lErr').innerText = ''; nav('pgLogin'); }
         function doLogout() { st.u = null; document.getElementById('lid').value = ''; nav('pgLogin'); }
@@ -3670,7 +3690,7 @@
             document.getElementById('queueTimerStr').innerText = "00:00";
             st.myPts = st.l.filter(l => l.employee_id === st.u.employee_id).reduce((a, b) => a + (b.point || 0), 0);
             const myRank = getRankInfo(st.myPts || 0);
-            battleMyInfo = { name: st.u.name.split(' ')[0], site: st.u.site, tier: myRank.name, color: myRank.color[0] };
+            battleMyInfo = { name: st.u.name.split(' ')[0], site: st.u.site, tier: myRank.name, color: myRank.color[0], emp_id: String(st.u.employee_id) };
 
             const { data: res, error } = await sb.rpc('join_battle', { p_emp_id: String(st.u.employee_id), p_info: battleMyInfo });
             if (error || !res || !res.room_id) { showAlert(error?.message || 'ไม่สามารถสร้างห้องได้', 'ระบบขัดข้อง', 'fa-times', 'var(--mc-red)'); cancelBattleQueue(); return; }
@@ -3698,18 +3718,32 @@
                     })
                     .subscribe();
 
+                let isPollingReMatch = false; // FIX: ป้องกันการยิงซ้อนกันเอง
                 queueTimer = setInterval(async () => {
                     queueSeconds++;
                     document.getElementById('queueTimerStr').innerText = Math.floor(queueSeconds / 60).toString().padStart(2, '0') + ':' + (queueSeconds % 60).toString().padStart(2, '0');
 
                     // FIX BUG #1: Re-call join_battle ทุก 5 วินาที เพื่อให้ tier expansion re-evaluate
-                    if (queueSeconds % 5 === 0 && currentBattleRoomId && isBattleHost) {
+                    if (queueSeconds % 5 === 0 && currentBattleRoomId && isBattleHost && !isPollingReMatch) {
                         try {
+                            isPollingReMatch = true;
                             const { data: reMatch } = await sb.rpc('join_battle', { p_emp_id: String(st.u.employee_id), p_info: battleMyInfo });
+                            isPollingReMatch = false;
+                            
+                            // ล็อกถ้าถูกจับคู่ไปแล้ว หรือไม่ใช่ host แล้ว (หนีการ ghost room collision)
+                            if (isMatchFoundTriggered || !isBattleHost) {
+                                if (reMatch && reMatch.room_id && reMatch.room_id !== currentBattleRoomId) {
+                                    sb.rpc('leave_battle', { p_room_id: reMatch.room_id }).catch(()=>{});
+                                }
+                                return;
+                            }
+
                             if (reMatch && reMatch.status === 'matched') {
                                 // จับคู่ได้แล้ว! room_id อาจเปลี่ยน (เราเข้าห้องคนอื่น)
+                                const oldId = currentBattleRoomId;
                                 currentBattleRoomId = reMatch.room_id;
                                 isBattleHost = false;
+                                if (oldId && oldId !== currentBattleRoomId) sb.rpc('leave_battle', { p_room_id: oldId }).catch(()=>{});
                                 if (!battleChannel) battleChannel = sb.channel('queue_' + currentBattleRoomId);
                                 battleChannel.subscribe((status) => {
                                     if (status === 'SUBSCRIBED') { battleChannel.send({ type: 'broadcast', event: 'guest_joined', payload: { p2_info: battleMyInfo } }); }
@@ -3724,8 +3758,10 @@
                                 return;
                             } else if (reMatch && reMatch.room_id !== currentBattleRoomId) {
                                 // ห้องเก่าถูก cancel, ห้องใหม่ถูกสร้าง — อัพเดต subscription
+                                const oldId = currentBattleRoomId;
                                 if (battleChannel) { try { await sb.removeChannel(battleChannel); } catch (e) { } }
                                 currentBattleRoomId = reMatch.room_id;
+                                sb.rpc('leave_battle', { p_room_id: oldId }).catch(()=>{});
                                 battleChannel = sb.channel('queue_' + currentBattleRoomId)
                                     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'battle_rooms', filter: 'id=eq.' + currentBattleRoomId },
                                         payload => { if (payload.new.status === 'playing') { isBattleHost = true; triggerMatchFound(battleMyInfo, payload.new.p2_info); } }
@@ -3892,7 +3928,7 @@
         function createBattleChannel(chName) {
             battleChannel = sb.channel(chName, { config: { broadcast: { self: true } } })
                 .on('broadcast', { event: 'sync_q_set' }, payload => {
-                    if (payload.payload.emp_id === st.u.employee_id) return;
+                    if (!battleOppInfo || payload.payload.emp_id !== String(battleOppInfo.emp_id)) return;
                     if (payload.payload.q_ids) {
                         if (!hasReceivedQuestions) {
                             battleQuestions = payload.payload.q_ids.map(id => st.q.find(q => q.id === id)).filter(Boolean);
@@ -3906,33 +3942,34 @@
                     }
                 })
                 .on('broadcast', { event: 'request_sync' }, payload => {
-                    if (payload.payload.emp_id === st.u.employee_id) return;
+                    if (!battleOppInfo || payload.payload.emp_id !== String(battleOppInfo.emp_id)) return;
                     if (isBattleHost && battleQuestions.length > 0) {
                         const qPayload = { emp_id: st.u.employee_id, q_ids: battleQuestions.map(q => q.id), seeds: battleShuffleSeeds };
                         battleChannel.send({ type: 'broadcast', event: 'sync_q_set', payload: qPayload });
                     }
                 })
                 .on('broadcast', { event: 'sync_q_ack' }, payload => {
-                    if (payload.payload.emp_id === st.u.employee_id) return;
+                    if (!battleOppInfo || payload.payload.emp_id !== String(battleOppInfo.emp_id)) return;
                     if (isBattleHost) { if (syncQSetRetryInterval) { clearInterval(syncQSetRetryInterval); syncQSetRetryInterval = null; } if (!battleLoadQCalled) battleLoadQ(); }
                 })
                 .on('broadcast', { event: 'ready_for_q' }, payload => {
-                    if (payload.payload.emp_id === st.u.employee_id) return;
+                    if (!battleOppInfo || payload.payload.emp_id !== String(battleOppInfo.emp_id)) return;
                     highestOppReadyQ = Math.max(highestOppReadyQ, payload.payload.q_idx);
                     if (highestOppReadyQ >= battleIndex) { oppReadyForQ = true; tryStartQuestionTimer(); }
                 })
                 .on('broadcast', { event: 'start_timer' }, payload => {
+                    if (!battleOppInfo || payload.payload.emp_id !== String(battleOppInfo.emp_id)) return;
                     highestStartTimerQ = Math.max(highestStartTimerQ, payload.payload.q_idx);
                     if (highestStartTimerQ >= battleIndex && !timerRunning) startQuestionTimer();
                 })
                 .on('broadcast', { event: 'score_update' }, payload => {
-                    if (payload.payload.emp_id === st.u.employee_id) return;
+                    if (!battleOppInfo || payload.payload.emp_id !== String(battleOppInfo.emp_id)) return;
                     if (payload.payload.gameScore !== undefined) { battleOppGameScore = payload.payload.gameScore; const osd = document.getElementById('oppBattleScoreDisplay'); if (osd) osd.innerText = battleOppGameScore.toLocaleString('th-TH'); updateLiveScoreBar(); }
                     if (payload.payload.correct !== undefined) battleOppCorrect = payload.payload.correct;
                     if (payload.payload.totalTime !== undefined) battleOppTotalTime = payload.payload.totalTime;
                 })
                 .on('broadcast', { event: 'opponent_answered' }, payload => {
-                    if (payload.payload.emp_id === st.u.employee_id) return;
+                    if (!battleOppInfo || payload.payload.emp_id !== String(battleOppInfo.emp_id)) return;
                     if (payload.payload.q_idx === battleIndex && !oppAnsweredThisQ) {
                         oppAnsweredThisQ = true; oppAnswerTimeThisQ = parseFloat(payload.payload.time_sec || 0) * 1000; oppCorrectThisQ = payload.payload.is_correct;
                         if (battleQHistory[payload.payload.q_idx]) { battleQHistory[payload.payload.q_idx].oppTime = oppAnswerTimeThisQ; battleQHistory[payload.payload.q_idx].oppCorrect = payload.payload.is_correct; if (payload.payload.is_correct && payload.payload.rank === 1) { battleQHistory[payload.payload.q_idx].winner = 'opp'; battleQHistory[payload.payload.q_idx].oppScore = 100 + calcSpeedBonus(oppAnswerTimeThisQ); } }
@@ -3946,18 +3983,18 @@
                     }
                 })
                 .on('broadcast', { event: 'opponent_left' }, payload => {
-                    if (payload.payload.emp_id === st.u.employee_id) return;
+                    if (!battleOppInfo || payload.payload.emp_id !== String(battleOppInfo.emp_id)) return;
                     if (battleHeartbeatInterval) clearInterval(battleHeartbeatInterval);
                     let r = 0; if (battleIndex >= 5) r = 2000; else if (battleIndex >= 3) dcReward = 500;
                     showBattleResult(true, true, r);
                     showAlert(r > 0 ? 'คู่แข่งออกไป! +' + r + ' pt' : 'คู่แข่งออกไป', 'ชนะผ่าน!', 'fa-trophy', 'var(--agri-green)');
                 })
                 .on('broadcast', { event: 'heartbeat' }, payload => {
-                    if (payload.payload.emp_id === st.u.employee_id) return;
+                    if (!battleOppInfo || payload.payload.emp_id !== String(battleOppInfo.emp_id)) return;
                     lastOppHeartbeat = Date.now();
                 })
                 .on('broadcast', { event: 'battle_end_scores' }, payload => {
-                    if (payload.payload.emp_id === st.u.employee_id) return;
+                    if (!battleOppInfo || payload.payload.emp_id !== String(battleOppInfo.emp_id)) return;
                     battleOppCorrect = payload.payload.correct; if (payload.payload.gameScore !== undefined) battleOppGameScore = payload.payload.gameScore; if (payload.payload.totalTime !== undefined) battleOppTotalTime = payload.payload.totalTime;
                 });
         }
