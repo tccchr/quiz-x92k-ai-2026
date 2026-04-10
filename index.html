@@ -3546,10 +3546,13 @@
 
         async function fetchD() {
             try {
-                const qSelect = st.u?.type === 'admin' ? '*' : 'id, question, option_1, option_2, option_3, option_4, is_active';
+                const isAdmin = st.u?.type === 'admin';
+                const empTable = isAdmin ? 'employees' : 'v_employees_safe';
+                const qTable = isAdmin ? 'questions' : 'v_questions_safe';
+                const qSelect = isAdmin ? '*' : 'id, question, option_1, option_2, option_3, option_4, is_active';
                 const [e, q, l, p, sStats] = await Promise.all([
-                    sb.from('employees').select('id, employee_id, name, site, is_active').order('id'),
-                    sb.from('questions').select(qSelect).order('id'),
+                    sb.from(empTable).select('id, employee_id, name, site, is_active').order('id'),
+                    sb.from(qTable).select(qSelect).order('id'),
                     sb.from('logs').select('employee_id, point, created_at'),
                     sb.from('peak_times').select('*'),
                     sb.rpc('get_site_stats')
@@ -3898,7 +3901,7 @@
                     if (status === 'SUBSCRIBED') {
                         if (hostSetupDone) return;
                         hostSetupDone = true;
-                        await sb.from('battle_rooms').update({ q_locked_by: channelName }).eq('id', currentBattleRoomId);
+                        await sb.rpc('lock_battle_questions', { p_room_id: currentBattleRoomId, p_channel_name: channelName });
                         const qPayload = { emp_id: st.u.employee_id, q_ids: battleQuestions.map(q => q.id), seeds: battleShuffleSeeds };
                         battleChannel.send({ type: 'broadcast', event: 'sync_q_set', payload: qPayload });
                         syncQSetRetryInterval = setInterval(() => {
