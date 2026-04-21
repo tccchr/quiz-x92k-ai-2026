@@ -3216,7 +3216,7 @@
             document.getElementById('pcTier').innerText = "";
             try {
                 const [uRes, lRes] = await Promise.all([
-                    sb.from('employees').select('id, employee_id, name, site, is_active').eq('employee_id', empId).single(),
+                    sb.from('employees').select('*').eq('employee_id', empId).single(),
                     sb.from('logs').select('point, created_at').eq('employee_id', empId).order('created_at', { ascending: false }).limit(50)
                 ]);
                 const u = uRes.data; const logs = lRes.data || [];
@@ -3499,20 +3499,15 @@
             const checkAdmin = await sb.rpc('verify_admin', { p_code: id });
             if (checkAdmin.data === true) { st.u = { type: 'admin', code: id }; await fetchD(); nav('pgAdmin'); return; }
             load(true);
-            try {
-                const { data: authStatus, error } = await sb.rpc('check_employee_login', { p_emp_id: id });
-                if (error || !authStatus || !authStatus.exists) {
-                    load(false); document.getElementById('lErr').innerText = "รหัสพนักงานไม่ถูกต้อง หรือถูกระงับสิทธิ์";
-                    return;
-                }
+            const { data: emp } = await sb.from('employees').select('employee_id, is_active').eq('employee_id', id).single();
+            if (emp && emp.is_active !== false) {
                 tempEmpId = id;
+                const { data: hasPin } = await sb.rpc('check_pin_status', { p_emp_id: id });
                 load(false); currentPin = ''; updatePinDisplay(); document.getElementById('pinErr').innerText = '';
-                if (authStatus.has_pin) { isPinSetupMode = false; document.getElementById('pinTitle').innerText = "เข้าสู่ระบบ"; document.getElementById('pinTitle').style.color = "white"; document.getElementById('pinSub').innerText = "กรุณากดรหัส PIN 6 หลักของคุณ"; }
+                if (hasPin) { isPinSetupMode = false; document.getElementById('pinTitle').innerText = "เข้าสู่ระบบ"; document.getElementById('pinTitle').style.color = "white"; document.getElementById('pinSub').innerText = "กรุณากดรหัส PIN 6 หลักของคุณ"; }
                 else { isPinSetupMode = true; document.getElementById('pinTitle').innerText = "ตั้งค่า PIN ใหม่"; document.getElementById('pinTitle').style.color = "var(--gold)"; document.getElementById('pinSub').innerText = "กำหนดรหัส PIN 6 หลักสำหรับการใช้งาน"; }
                 nav('pgPin');
-            } catch (err) {
-                load(false); document.getElementById('lErr').innerText = "Error: " + (err.message || String(err));
-            }
+            } else { load(false); document.getElementById('lErr').innerText = "รหัสพนักงานไม่ถูกต้อง หรือถูกระงับสิทธิ์"; }
         }
         function addPin(num) { if (currentPin.length < 6) { currentPin += num; updatePinDisplay(); document.getElementById('pinErr').innerText = ''; if (currentPin.length === 6) setTimeout(() => submitPin(), 200); } }
         function delPin() { if (currentPin.length > 0) { currentPin = currentPin.slice(0, -1); updatePinDisplay(); document.getElementById('pinErr').innerText = ''; } }
@@ -3536,7 +3531,7 @@
         }
         async function finalizeLogin(id) {
             try {
-                const { data, error } = await sb.rpc('get_employee_profile', { p_emp_id: id });
+                const { data, error } = await sb.from('employees').select('id, employee_id, name, site, is_active, created_at').eq('employee_id', id).single();
                 if (error) throw error;
                 load(false);
                 if (data) {
