@@ -2651,6 +2651,7 @@
             display: none;
             animation: slideDownFade 0.3s ease;
         }
+
         .user-dropdown {
             position: absolute;
             top: calc(100% + 15px);
@@ -2764,15 +2765,15 @@
                 </div>
                 <div class="rank-info-item">
                     <div class="r-name" style="color:#b9f2ff">💎 Diamond</div>
-                    <div class="r-pts">50,000 - 149,999</div>
+                    <div class="r-pts">50,000 - 79,999</div>
                 </div>
                 <div class="rank-info-item">
                     <div class="r-name" style="color:#da70d6">🔮 Master</div>
-                    <div class="r-pts">150,000 - 299,999</div>
+                    <div class="r-pts">80,000 - 299,999</div>
                 </div>
                 <div class="rank-info-item">
                     <div class="r-name" style="color:#ff8c00">🔥 Grandmaster</div>
-                    <div class="r-pts">300,000 - 499,999</div>
+                    <div class="r-pts">300,000 - 999,999</div>
                 </div>
                 <div class="rank-info-item">
                     <div class="r-name" style="color:#ff0000">👑 Challenger</div>
@@ -2986,8 +2987,16 @@
             <div class="stats-grid" id="siteArea"></div>
         </div>
         <div class="section-row" style="padding-bottom:120px;">
-            <div class="row-title"><i class="fas fa-list" style="color:white;"></i> อันดับในสาขา <span id="lbSite"
-                    style="color:var(--text-muted); margin-left:10px;"></span></div>
+            <div class="row-title" style="display:flex; justify-content:space-between; align-items:center;">
+                <div><i class="fas fa-list" style="color:white;"></i> อันดับสาขา</div>
+                <select id="siteRankFilter" onchange="render()"
+                    style="background: rgba(0,0,0,0.5); color: white; border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; padding: 5px 10px; font-family: 'Kanit'; font-size: 14px; outline: none; cursor:pointer;">
+                    <option value="ALL">รวมทุกสาขา</option>
+                    <option value="HO">HO</option>
+                    <option value="PD">PPD</option>
+                    <option value="NK">NKL</option>
+                </select>
+            </div>
             <div id="rankArea"></div>
         </div>
         <div class="fab-area">
@@ -3275,10 +3284,10 @@
             if (pts < 10000) return { name: "🥈 Silver", min: 3000, max: 10000, color: ["#c0c0c0", "#e5e4e2"] };
             if (pts < 25000) return { name: "🥇 Gold", min: 10000, max: 25000, color: ["#ffd700", "#ffeb3b"] };
             if (pts < 50000) return { name: "💠 Platinum", min: 25000, max: 50000, color: ["#00ced1", "#e0ffff"] };
-            if (pts < 80000) return { name: "💎 Diamond", min: 50000, max: 150000, color: ["#b9f2ff", "#ffffff"] };
-            if (pts < 120000) return { name: "🔮 Master", min: 150000, max: 300000, color: ["#8a2be2", "#da70d6"] };
-            if (pts < 160000) return { name: "🔥 Grandmaster", min: 500000, max: 1000000, color: ["#ff4500", "#ff8c00"] };
-            return { name: "👑 Challenger", min: 1000000, max: 100000000, color: ["#ff0000", "#ff1493"] };
+            if (pts < 150000) return { name: "💎 Diamond", min: 50000, max: 80000, color: ["#b9f2ff", "#ffffff"] };
+            if (pts < 300000) return { name: "🔮 Master", min: 80000, max: 300000, color: ["#8a2be2", "#da70d6"] };
+            if (pts < 1000000) return { name: "🔥 Grandmaster", min: 300000, max: 1000000, color: ["#ff4500", "#ff8c00"] };
+            return { name: "👑 Challenger", min: 1000000, max: 1000000, color: ["#ff0000", "#ff1493"] };
         }
 
         function openRankInfo() { document.getElementById('rankInfoModal').style.display = 'flex'; }
@@ -3363,7 +3372,7 @@
                 document.getElementById('rankNameDisplay').style.color = rank.color[0];
                 document.getElementById('rankProgressBar').style.background = `linear-gradient(90deg, ${rank.color[0]}, ${rank.color[1]})`;
                 document.getElementById('rankProgressBar').style.boxShadow = `0 0 10px ${rank.color[0]}80`;
-                if (myPts >= 160000) { document.getElementById('rankExpDisplay').innerText = "MAX TIER"; document.getElementById('rankProgressBar').style.width = "100%"; }
+                if (myPts >= 1000000) { document.getElementById('rankExpDisplay').innerText = "MAX TIER"; document.getElementById('rankProgressBar').style.width = "100%"; }
                 else { document.getElementById('rankExpDisplay').innerText = `${myPts.toLocaleString('th-TH')} / ${fmt(rank.max)}`; let percent = ((myPts - rank.min) / (rank.max - rank.min)) * 100; document.getElementById('rankProgressBar').style.width = Math.max(0, Math.min(100, percent)) + "%"; }
             }
             const sortedSites = st.siteStats.map(item => ({ site: item.site.trim().toUpperCase(), great: item.average_score }));
@@ -3373,7 +3382,20 @@
             const actU = users.filter(u => u.pts > 0); const t3 = actU.slice(0, 3);
             if (t3.length) { let ph = ''; if (t3[1]) ph += pCol(t3[1], 2); else ph += '<div class="pod-char"></div>'; if (t3[0]) ph += pCol(t3[0], 1); if (t3[2]) ph += pCol(t3[2], 3); else ph += '<div class="pod-char"></div>'; document.getElementById('podArea').innerHTML = ph; }
             else { document.getElementById('podArea').innerHTML = '<div class="empty-state"><i class="fas fa-trophy"></i><div>เตรียมพบกับผู้ชนะเร็วๆ นี้</div></div>'; }
-            const myS = users.filter(u => u.cleanSite === st.u.site.trim().toUpperCase() && u.pts > 0).slice(0, 10);
+            const filterEl = document.getElementById('siteRankFilter');
+            if (filterEl && !filterEl.dataset.initialized) {
+                let s = st.u.site ? st.u.site.trim().toUpperCase() : '';
+                if (filterEl.querySelector(`option[value="${s}"]`)) filterEl.value = s;
+                filterEl.dataset.initialized = 'true';
+            }
+
+            let targetSite = filterEl ? filterEl.value : 'ALL';
+            let myS;
+            if (targetSite === 'ALL') {
+                myS = users.filter(u => u.pts > 0).slice(0, 10);
+            } else {
+                myS = users.filter(u => u.cleanSite === targetSite && u.pts > 0).slice(0, 10);
+            }
             document.getElementById('rankArea').innerHTML = myS.map((u, i) => { const userRank = getRankInfo(u.pts); const firstName = u.name.split(' ')[0]; return `<div class="list-row" style="animation-delay:${i * 0.05}s" onclick="openPlayerStats('${u.employee_id}')"><div style="display:flex; justify-content:space-between; align-items:center;"><div style="display:flex; align-items:center; gap:15px;"><div class="rk-idx">${i + 1}</div><div><div style="font-weight:600;">${firstName}</div><div style="font-size: 11px; color: ${userRank.color[0]}; font-weight: 700;">${userRank.name}</div></div></div><div class="rk-pts">${fmt(u.pts)}</div></div></div>`; }).join('') || '<div class="empty-state"><i class="fas fa-users"></i><div>ยังไม่มีผู้เล่น</div></div>';
         }
 
@@ -3609,7 +3631,7 @@
                 if (data) {
                     st.u = data;
                     sb.rpc('set_session_token', { p_emp_id: String(st.u.employee_id), p_token: mySessionToken }).then(({ error }) => { if (error) console.error(error); });
-                    document.getElementById('uName').innerText = data.name.split(' ')[0]; document.getElementById('uSite').innerText = data.site; document.getElementById('lbSite').innerText = `(${data.site})`; await fetchD(); render(); nav('pgMain'); const { count: tCount } = await sb.from('logs').select('*', { count: 'exact', head: true }).eq('employee_id', String(st.u.employee_id)); if (tCount === 0) setTimeout(() => startTutorial(), 1000);
+                    document.getElementById('uName').innerText = data.name.split(' ')[0]; document.getElementById('uSite').innerText = data.site; if (document.getElementById('lbSite')) document.getElementById('lbSite').innerText = `(${data.site})`; await fetchD(); render(); nav('pgMain'); const { count: tCount } = await sb.from('logs').select('*', { count: 'exact', head: true }).eq('employee_id', String(st.u.employee_id)); if (tCount === 0) setTimeout(() => startTutorial(), 1000);
                 }
             } catch (err) {
                 document.getElementById('pinErr').innerText = "Login Error: " + (err.message || String(err));
@@ -4486,7 +4508,7 @@
         function toggleUserMenu() {
             document.getElementById('userDropdown').classList.toggle('show');
         }
-        window.addEventListener('click', function(e) {
+        window.addEventListener('click', function (e) {
             if (!e.target.closest('.user-pill-wrap')) {
                 const dropdown = document.getElementById('userDropdown');
                 if (dropdown && dropdown.classList.contains('show')) {
