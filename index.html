@@ -2764,19 +2764,19 @@
                 </div>
                 <div class="rank-info-item">
                     <div class="r-name" style="color:#b9f2ff">💎 Diamond</div>
-                    <div class="r-pts">50,000 - 79,999</div>
+                    <div class="r-pts">50,000 - 149,999</div>
                 </div>
                 <div class="rank-info-item">
                     <div class="r-name" style="color:#da70d6">🔮 Master</div>
-                    <div class="r-pts">80,000 - 119,999</div>
+                    <div class="r-pts">150,000 - 299,999</div>
                 </div>
                 <div class="rank-info-item">
                     <div class="r-name" style="color:#ff8c00">🔥 Grandmaster</div>
-                    <div class="r-pts">120,000 - 159,999</div>
+                    <div class="r-pts">300,000 - 499,999</div>
                 </div>
                 <div class="rank-info-item">
                     <div class="r-name" style="color:#ff0000">👑 Challenger</div>
-                    <div class="r-pts">160,000+</div>
+                    <div class="r-pts">1,000,000+</div>
                 </div>
             </div>
         </div>
@@ -3275,10 +3275,10 @@
             if (pts < 10000) return { name: "🥈 Silver", min: 3000, max: 10000, color: ["#c0c0c0", "#e5e4e2"] };
             if (pts < 25000) return { name: "🥇 Gold", min: 10000, max: 25000, color: ["#ffd700", "#ffeb3b"] };
             if (pts < 50000) return { name: "💠 Platinum", min: 25000, max: 50000, color: ["#00ced1", "#e0ffff"] };
-            if (pts < 80000) return { name: "💎 Diamond", min: 50000, max: 80000, color: ["#b9f2ff", "#ffffff"] };
-            if (pts < 120000) return { name: "🔮 Master", min: 80000, max: 120000, color: ["#8a2be2", "#da70d6"] };
-            if (pts < 160000) return { name: "🔥 Grandmaster", min: 120000, max: 160000, color: ["#ff4500", "#ff8c00"] };
-            return { name: "👑 Challenger", min: 160000, max: 160000, color: ["#ff0000", "#ff1493"] };
+            if (pts < 80000) return { name: "💎 Diamond", min: 50000, max: 150000, color: ["#b9f2ff", "#ffffff"] };
+            if (pts < 120000) return { name: "🔮 Master", min: 150000, max: 300000, color: ["#8a2be2", "#da70d6"] };
+            if (pts < 160000) return { name: "🔥 Grandmaster", min: 500000, max: 1000000, color: ["#ff4500", "#ff8c00"] };
+            return { name: "👑 Challenger", min: 1000000, max: 100000000, color: ["#ff0000", "#ff1493"] };
         }
 
         function openRankInfo() { document.getElementById('rankInfoModal').style.display = 'flex'; }
