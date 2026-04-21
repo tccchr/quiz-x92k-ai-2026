@@ -3126,10 +3126,7 @@
     <div id="tutTooltip" class="tut-tooltip" style="display:none;">
         <div class="tut-title" id="tutTitle"><i class="fas fa-info-circle"></i> Title</div>
         <div class="tut-desc" id="tutDesc">Description goes here</div>
-        <div class="tut-footer">
-            <button class="btn-modern"
-                style="background:transparent; box-shadow:none; color:var(--text-dim); padding: 10px; width:auto; text-decoration: underline; font-size: 14px;"
-                onclick="endTutorial()" id="tutSkipBtn">หยุดสอน</button>
+        <div class="tut-footer" style="justify-content: flex-end;">
             <div style="display: flex; align-items: center; gap: 10px;">
                 <span class="tut-step" id="tutStepCount">1/5</span>
                 <button class="btn-modern"
@@ -3601,7 +3598,7 @@
             { el: 'guide-modal', title: 'เตรียมตัวก่อนเล่นจริง!', desc: 'เดี๋ยวเรามาดูหน้าประลองกันก่อนว่าเวลาเล่นจริงจะเป็นยังไง' }
         ];
         function startTutorial() { currentTutStep = 0; isTutorialMode = true; document.getElementById('tutBlocker').style.display = 'block'; document.getElementById('tutSpotlight').style.display = 'block'; document.getElementById('tutTooltip').style.display = 'flex'; showTutStep(); if (tutInterval) clearInterval(tutInterval); tutInterval = setInterval(() => { if (!isTutorialMode) return; let step = tutSteps[currentTutStep]; if (step && step.el !== 'mock-game') { let target = document.querySelector(step.el) || document.querySelector('.fab-area'); if (target) updateSpotlightPos(target); } }, 10); }
-        function showTutStep() { let step = tutSteps[currentTutStep]; if (step.el === 'guide-modal') { showGuideModal(); return; } let target = document.querySelector(step.el) || document.querySelector('.fab-area'); target.scrollIntoView({ behavior: 'smooth', block: 'center' }); document.getElementById('tutTitle').innerHTML = `<i class="fas fa-star"></i> ${step.title}`; document.getElementById('tutDesc').innerText = step.getDesc ? step.getDesc() : step.desc; document.getElementById('tutStepCount').innerText = `${currentTutStep + 1}/${tutSteps.length}`; document.getElementById('tutBtn').innerText = 'ถัดไป'; document.getElementById('tutBtn').onclick = nextTutStep; document.getElementById('tutBtn').style.display = 'inline-block'; document.getElementById('tutSkipBtn').style.display = 'inline-block'; }
+        function showTutStep() { let step = tutSteps[currentTutStep]; if (step.el === 'guide-modal') { showGuideModal(); return; } let target = document.querySelector(step.el) || document.querySelector('.fab-area'); target.scrollIntoView({ behavior: 'smooth', block: 'center' }); document.getElementById('tutTitle').innerHTML = `<i class="fas fa-star"></i> ${step.title}`; document.getElementById('tutDesc').innerText = step.getDesc ? step.getDesc() : step.desc; document.getElementById('tutStepCount').innerText = `${currentTutStep + 1}/${tutSteps.length}`; document.getElementById('tutBtn').innerText = 'ถัดไป'; document.getElementById('tutBtn').onclick = nextTutStep; document.getElementById('tutBtn').style.display = 'inline-block'; }
         function updateSpotlightPos(target) { if (!target || !isTutorialMode) return; const rect = target.getBoundingClientRect(); const spot = document.getElementById('tutSpotlight'); const tooltip = document.getElementById('tutTooltip'); spot.style.top = (rect.top - 8) + 'px'; spot.style.left = (rect.left - 8) + 'px'; spot.style.width = (rect.width + 16) + 'px'; spot.style.height = (rect.height + 16) + 'px'; if (rect.top > window.innerHeight / 2) { tooltip.style.top = '30px'; tooltip.style.bottom = 'auto'; } else { tooltip.style.bottom = '30px'; tooltip.style.top = 'auto'; } }
         function showGuideModal() {
             document.getElementById('tutSpotlight').style.display = 'none';
