@@ -546,7 +546,7 @@
             height: auto;
             min-height: 380px;
             position: relative;
-            background: linear-gradient(135deg, rgba(236, 72, 153, 0.2) 0%, rgba(14, 165, 233, 0.15) 100%), url('https://images.unsplash.com/photo-1620712943543-bcc4688e7485?q=80&w=2000&auto=format&fit=crop');
+            background: linear-gradient(135deg, rgba(236, 72, 153, 0.2) 0%, rgba(14, 165, 233, 0.15) 100%), url('https://images.unsplash.com/photo-1614064641913-6b1e6ebaf71b?auto=format&fit=crop&w=2000&q=80');
             background-size: cover;
             background-position: center;
             display: flex;
@@ -2651,6 +2651,75 @@
             display: none;
             animation: slideDownFade 0.3s ease;
         }
+        .user-dropdown {
+            position: absolute;
+            top: calc(100% + 15px);
+            right: 0;
+            background: linear-gradient(145deg, rgba(24, 24, 27, 0.98), rgba(9, 9, 11, 1));
+            border: 1px solid rgba(14, 165, 233, 0.3);
+            border-radius: 12px;
+            padding: 8px 0;
+            min-width: 170px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7), 0 0 15px rgba(14, 165, 233, 0.15);
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(-10px);
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            z-index: 100;
+        }
+
+        .user-dropdown.show {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+
+        .dropdown-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            width: 100%;
+            padding: 12px 20px;
+            background: transparent;
+            border: none;
+            color: white;
+            font-size: 14px;
+            font-family: 'Kanit', sans-serif;
+            text-align: left;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .dropdown-item i {
+            width: 16px;
+            text-align: center;
+        }
+
+        .dropdown-item.opt-key {
+            color: var(--gold);
+        }
+
+        .dropdown-item.opt-key:hover {
+            background: rgba(139, 92, 246, 0.1);
+            color: var(--gold-light);
+            padding-left: 25px;
+        }
+
+        .dropdown-item.opt-out {
+            color: var(--mc-red-light);
+        }
+
+        .dropdown-item.opt-out:hover {
+            background: rgba(14, 165, 233, 0.1);
+            color: var(--mc-red);
+            padding-left: 25px;
+        }
+
+        .dropdown-divider {
+            height: 1px;
+            background: rgba(255, 255, 255, 0.1);
+            margin: 6px 0;
+        }
     </style>
 </head>
 
@@ -2862,11 +2931,22 @@
         <div class="top-bar">
             <div class="app-brand"><img src="https://lh3.googleusercontent.com/u/0/d/1BfK23-w9ECGzshChx9OY7c4SXtzgOrxI"
                     alt="MC" /><span class="app-brand-text">ai <span>QUIZ</span></span></div>
-            <div class="user-pill">
-                <div class="u-info">
-                    <div class="u-name" id="uName">Player</div>
-                </div><button class="btn-logout" onclick="doLogout()" title="ออกจากระบบ"><i
-                        class="fas fa-sign-out-alt"></i></button>
+            <div class="user-pill-wrap" style="position: relative;">
+                <div class="user-pill" onclick="toggleUserMenu()" style="cursor: pointer;">
+                    <div class="u-info" style="display: flex; align-items: center; gap: 8px;">
+                        <div class="u-name" id="uName">Player</div>
+                        <i class="fas fa-chevron-down" style="font-size: 10px; opacity: 0.7;"></i>
+                    </div>
+                </div>
+                <div id="userDropdown" class="user-dropdown">
+                    <button class="dropdown-item opt-key" onclick="openForgotPinModal()">
+                        <i class="fas fa-key"></i> เปลี่ยน Pin / รหัสผ่าน
+                    </button>
+                    <div class="dropdown-divider"></div>
+                    <button class="dropdown-item opt-out" onclick="doLogout()">
+                        <i class="fas fa-sign-out-alt"></i> ออกจากระบบ
+                    </button>
+                </div>
             </div>
         </div>
         <div class="hero-banner">
@@ -3212,20 +3292,16 @@
             document.getElementById('pcTotal').innerText = "-";
             document.getElementById('pcTier').innerText = "";
             try {
-                const [uRes, lRes] = await Promise.all([
+                const [uRes, lRes, cRes] = await Promise.all([
                     sb.from('employees').select('*').eq('employee_id', empId).single(),
-                    sb.from('logs').select('point, created_at').eq('employee_id', empId).order('created_at', { ascending: false }).limit(50)
+                    sb.from('logs').select('point, created_at').eq('employee_id', empId).order('created_at', { ascending: false }).limit(50),
+                    sb.from('logs').select('*', { count: 'exact', head: true }).eq('employee_id', empId)
                 ]);
                 const u = uRes.data; const logs = lRes.data || [];
-                const allMyLogs = st.l.filter(l => l.employee_id === empId);
-                const totalGames = allMyLogs.length;
-                const totalPoints = allMyLogs.reduce((sum, l) => sum + (l.point || 0), 0);
+                const totalGames = cRes.count || 0;
+                const totalPoints = st.e.find(x => x.employee_id === empId)?.pts || 0;
                 const avgPoints = logs.length > 0 ? (logs.reduce((sum, l) => sum + (l.point || 0), 0) / logs.length).toFixed(1) : "0";
-                const allUsers = st.e.filter(e => e.is_active !== false).map(e => {
-                    const p = st.l.filter(l => l.employee_id === e.employee_id).reduce((a, b) => a + (b.point || 0), 0);
-                    return { id: e.employee_id, pts: p };
-                }).sort((a, b) => b.pts - a.pts);
-                const rankIdx = allUsers.findIndex(x => x.id === empId);
+                const rankIdx = st.e.findIndex(x => x.employee_id === empId);
                 const globalRank = rankIdx !== -1 ? rankIdx + 1 : 0;
                 const rInfo = getRankInfo(totalPoints);
                 if (u) {
@@ -3265,9 +3341,8 @@
 
         function render() {
             const users = st.e.filter(u => u.is_active !== false).map(u => {
-                const p = st.l.filter(l => l.employee_id === u.employee_id).reduce((a, b) => a + (b.point || 0), 0);
-                return { ...u, pts: p, cleanSite: u.site.trim().toUpperCase() };
-            }).sort((a, b) => b.pts - a.pts);
+                return { ...u, pts: u.pts || 0, cleanSite: (u.site || '').trim().toUpperCase() };
+            });
             const myIdx = users.findIndex(u => u.employee_id === st.u.employee_id);
             if (myIdx !== -1) {
                 const myPts = users[myIdx].pts;
@@ -3331,7 +3406,7 @@
             const vq = st.q.filter(q => q.is_active !== false);
             if (!vq.length) { showAlert('ไม่มีคำถามในระบบ'); return; }
             st.s = 0; isAnswering = false;
-            st.myPts = st.l.filter(l => l.employee_id === st.u.employee_id).reduce((a, b) => a + (b.point || 0), 0);
+            st.myPts = st.e.find(x => x.employee_id === String(st.u.employee_id))?.pts || 0;
             document.getElementById('ingameScore').innerText = st.myPts.toLocaleString('th-TH');
             document.getElementById('peakBanner').style.display = 'none';
             const bb = document.getElementById('battleScoreBoardUI'); if (bb) bb.style.display = 'none';
@@ -3534,7 +3609,7 @@
                 if (data) {
                     st.u = data;
                     sb.rpc('set_session_token', { p_emp_id: String(st.u.employee_id), p_token: mySessionToken }).then(({ error }) => { if (error) console.error(error); });
-                    document.getElementById('uName').innerText = data.name.split(' ')[0]; document.getElementById('uSite').innerText = data.site; document.getElementById('lbSite').innerText = `(${data.site})`; await fetchD(); render(); nav('pgMain'); const myLogs = st.l.filter(log => log.employee_id === st.u.employee_id); if (myLogs.length === 0) setTimeout(() => startTutorial(), 1000);
+                    document.getElementById('uName').innerText = data.name.split(' ')[0]; document.getElementById('uSite').innerText = data.site; document.getElementById('lbSite').innerText = `(${data.site})`; await fetchD(); render(); nav('pgMain'); const { count: tCount } = await sb.from('logs').select('*', { count: 'exact', head: true }).eq('employee_id', String(st.u.employee_id)); if (tCount === 0) setTimeout(() => startTutorial(), 1000);
                 }
             } catch (err) {
                 document.getElementById('pinErr').innerText = "Login Error: " + (err.message || String(err));
@@ -3547,14 +3622,15 @@
         async function fetchD() {
             try {
                 const qSelect = st.u?.type === 'admin' ? '*' : 'id, question, option_1, option_2, option_3, option_4, is_active';
+                const tdIso = new Date(Date.now() + (st.timeOffset || 0)).toISOString().slice(0, 10);
                 const [e, q, l, p, sStats] = await Promise.all([
-                    sb.from('employees').select('id, employee_id, name, site, is_active').order('id'),
+                    sb.from('employee_leaderboard').select('*'),
                     sb.from('questions').select(qSelect).order('id'),
-                    sb.from('logs').select('employee_id, point, created_at'),
+                    sb.from('logs').select('employee_id, point, created_at').gte('created_at', tdIso),
                     sb.from('peak_times').select('*'),
                     sb.rpc('get_site_stats')
                 ]);
-                st.e = e.data || []; st.q = (q.data && q.data.length) ? q.data : []; st.l = l.data || []; st.p = p.data || []; st.siteStats = sStats.data || [];
+                st.e = (e.data || []).sort((a, b) => b.pts - a.pts); st.q = (q.data && q.data.length) ? q.data : []; st.l = l.data || []; st.p = p.data || []; st.siteStats = sStats.data || [];
                 if (st.u?.type === 'admin') renderAdmin();
             } catch (x) { console.log(x); }
         }
@@ -3718,7 +3794,7 @@
             nav('pgBattleQueue'); queueSeconds = 0;
             isMatchFoundTriggered = false;
             document.getElementById('queueTimerStr').innerText = "00:00";
-            st.myPts = st.l.filter(l => l.employee_id === st.u.employee_id).reduce((a, b) => a + (b.point || 0), 0);
+            st.myPts = st.e.find(x => x.employee_id === String(st.u.employee_id))?.pts || 0;
             const myRank = getRankInfo(st.myPts || 0);
             battleMyInfo = { name: st.u.name.split(' ')[0], site: st.u.site, tier: myRank.name, color: myRank.color[0], emp_id: String(st.u.employee_id) };
 
@@ -3871,7 +3947,7 @@
             timerRunning = false; hostSetupDone = false;
             myConsecutiveTimeouts = 0; oppConsecutiveTimeouts = 0;
 
-            st.myPts = st.l.filter(l => l.employee_id === st.u.employee_id).reduce((a, b) => a + (b.point || 0), 0);
+            st.myPts = st.e.find(x => x.employee_id === String(st.u.employee_id))?.pts || 0;
             document.getElementById('ingameScore').innerText = (st.myPts || 0).toLocaleString('th-TH');
             const bBoard = document.getElementById('battleScoreBoardUI');
             if (bBoard) { bBoard.style.display = 'flex'; document.getElementById('myBattleScoreDisplay').innerText = '0'; document.getElementById('oppBattleScoreDisplay').innerText = '0'; }
@@ -4406,6 +4482,19 @@
             <button class="btn-modern" style="width:100%;" onclick="closeGuideModal()">เข้าใจแล้ว พร้อมลุย!</button>
         </div>
     </div>
+    <script>
+        function toggleUserMenu() {
+            document.getElementById('userDropdown').classList.toggle('show');
+        }
+        window.addEventListener('click', function(e) {
+            if (!e.target.closest('.user-pill-wrap')) {
+                const dropdown = document.getElementById('userDropdown');
+                if (dropdown && dropdown.classList.contains('show')) {
+                    dropdown.classList.remove('show');
+                }
+            }
+        });
+    </script>
 </body>
 
 </html>
