@@ -3342,7 +3342,7 @@
         function closePlayerStats() { document.getElementById('playerModal').classList.remove('active'); }
         function openForgotPinModal() { document.getElementById('forgotPinModal').style.display = 'flex'; }
         function closeForgotPinModal() { document.getElementById('forgotPinModal').style.display = 'none'; }
-        function checkCheating(timeTaken) { if (timeTaken < 100) { showAlert("🚨 ระบบตรวจพบความผิดปกติ!"); return true; } return false; }
+        function checkCheating(timeTaken) { if (timeTaken < 300) { showAlert("🚨 ระบบตรวจพบความผิดปกติ!"); return true; } return false; }
         function nav(id) { document.querySelectorAll('.page-container').forEach(p => p.classList.remove('active')); document.getElementById(id).classList.add('active'); if (id === 'pgMain' && st.u && st.u.type !== 'admin') { fetchD().then(() => render()); } }
         function load(b) { document.getElementById('loading').style.display = b ? 'flex' : 'none'; }
         function shuffle(array) { let ci = array.length, ri; while (ci != 0) { ri = Math.floor(Math.random() * ci); ci--;[array[ci], array[ri]] = [array[ri], array[ci]]; } return array; }
